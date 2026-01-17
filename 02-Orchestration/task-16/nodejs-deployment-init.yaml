@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app-init
+  namespace: ivolve
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejs-app-init
+  template:
+    metadata:
+      labels:
+        app: nodejs-app-init
+    spec:
+      # Toleration for tainted node (from Task 10)
+      tolerations:
+        - key: "node"
+          operator: "Equal"
+          value: "worker"
+          effect: "NoSchedule"
+      # Init Container for database setup
+      initContainers:
+        - name: db-init
+          image: mysql:5.7
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for MySQL to be ready..."
+              # Use the actual MySQL service name (from Task 14)
+              MYSQL_SERVICE="mysql-service"
+              # Try multiple connection methods for headless service
+              MYSQL_POD_HOST="mysql-0.${MYSQL_SERVICE}.ivolve.svc.cluster.local"
+              MYSQL_SVC_HOST="${MYSQL_SERVICE}.ivolve.svc.cluster.local"
+              MYSQL_SIMPLE_HOST="${MYSQL_SERVICE}"
+              MAX_RETRIES=60
+              RETRY_COUNT=0
+              MYSQL_HOST=""
+
+              echo "Testing DNS resolution..."
+              nslookup ${MYSQL_POD_HOST} || echo "Pod DNS lookup failed"
+              nslookup ${MYSQL_SVC_HOST} || echo "Service DNS lookup failed"
+
+              echo "Attempting to connect to MySQL..."
+              # Try different hostnames in order
+              for HOST in "${MYSQL_POD_HOST}" "${MYSQL_SVC_HOST}" "${MYSQL_SIMPLE_HOST}"; do
+                echo "Trying to connect to: ${HOST}"
+                if mysql -h${HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" > /dev/null 2>&1; then
+                  MYSQL_HOST="${HOST}"
+                  echo "Successfully connected to MySQL at: ${MYSQL_HOST}"
+                  break
+                fi
+              done
+
+              # If no connection worked, retry with wait loop
+              if [ -z "${MYSQL_HOST}" ]; then
+                echo "Initial connection failed, waiting for MySQL to be ready..."
+                until mysql -h${MYSQL_POD_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" > /dev/null 2>&1 || \
+                      mysql -h${MYSQL_SVC_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" > /dev/null 2>&1 || \
+                      mysql -h${MYSQL_SIMPLE_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" > /dev/null 2>&1; do
+                  RETRY_COUNT=$((RETRY_COUNT + 1))
+                  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+                    echo "ERROR: Failed to connect to MySQL after $MAX_RETRIES attempts"
+                    echo "Trying to diagnose connection issue..."
+                    echo "Testing pod DNS:"
+                    nslookup ${MYSQL_POD_HOST} || echo "Pod DNS lookup failed"
+                    echo "Testing service DNS:"
+                    nslookup ${MYSQL_SVC_HOST} || echo "Service DNS lookup failed"
+                    echo "Testing simple hostname:"
+                    nslookup ${MYSQL_SIMPLE_HOST} || echo "Simple hostname DNS lookup failed"
+                    exit 1
+                  fi
+                  echo "MySQL is unavailable - sleeping (attempt $RETRY_COUNT/$MAX_RETRIES)"
+                  sleep 2
+                done
+                # Determine which host worked
+                if mysql -h${MYSQL_POD_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" > /dev/null 2>&1; then
+                  MYSQL_HOST=${MYSQL_POD_HOST}
+                elif mysql -h${MYSQL_SVC_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" > /dev/null 2>&1; then
+                  MYSQL_HOST=${MYSQL_SVC_HOST}
+                else
+                  MYSQL_HOST=${MYSQL_SIMPLE_HOST}
+                fi
+                echo "Successfully connected to MySQL at: ${MYSQL_HOST}"
+              fi
+              echo "MySQL is up - executing init script"
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME};"
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASSWORD}';"
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';"
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "FLUSH PRIVILEGES;"
+              echo "Verifying database and user creation..."
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SHOW DATABASES;"
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT User, Host FROM mysql.user WHERE User='${DB_USER}';"
+              mysql -h${MYSQL_HOST} -P3306 -uroot -p${MYSQL_ROOT_PASSWORD} -e "SHOW GRANTS FOR '${DB_USER}'@'%';"
+              echo "Database and user setup completed successfully!"
+          env:
+            # Use ConfigMap for non-sensitive config (from Task 12)
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_USER
+            - name: DB_NAME
+              value: "ivolve"
+            # Use Secret for sensitive data (from Task 12)
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: DB_PASSWORD
+      containers:
+        - name: nodejs
+          image: node:18-alpine
+          command:
+            - sh
+            - -c
+            - |
+              node -e "
+              const http = require('http');
+              const port = process.env.PORT || 3000;
+              const server = http.createServer((req, res) => {
+                res.writeHead(200, {'Content-Type': 'text/plain'});
+                res.end('Hello from Node.js App with Init Container!\nDB_HOST: ' + (process.env.DB_HOST || 'N/A') + '\nDB_USER: ' + (process.env.DB_USER || 'N/A') + '\nDB_NAME: ' + (process.env.DB_NAME || 'N/A'));
+              });
+              server.listen(port, '0.0.0.0', () => {
+                console.log('Node.js server running on port', port);
+              });
+              "
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # Use ConfigMap for non-sensitive config (from Task 12)
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_USER
+            - name: DB_NAME
+              value: "ivolve"
+            # Use Secret for sensitive data (from Task 12)
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: DB_PASSWORD
+            # Application port
+            - name: PORT
+              value: "3000"
+          volumeMounts:
+            - name: app-storage
+              mountPath: /app/data
+      volumes:
+        # Use ReadWriteMany PVC from Task 13
+        - name: app-storage
+          persistentVolumeClaim:
+            claimName: block-pvc
