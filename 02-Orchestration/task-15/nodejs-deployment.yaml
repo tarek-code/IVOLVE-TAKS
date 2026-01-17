@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app
+  namespace: ivolve
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejs-app
+  template:
+    metadata:
+      labels:
+        app: nodejs-app
+    spec:
+      # Toleration for tainted node (from Task 10)
+      tolerations:
+        - key: "node"
+          operator: "Equal"
+          value: "worker"
+          effect: "NoSchedule"
+      containers:
+        - name: nodejs
+          image: node:18-alpine
+          command:
+            - sh
+            - -c
+            - |
+              node -e "
+              const http = require('http');
+              const port = process.env.PORT || 3000;
+              const server = http.createServer((req, res) => {
+                res.writeHead(200, {'Content-Type': 'text/plain'});
+                res.end('Hello from Node.js App!\nDB_HOST: ' + (process.env.DB_HOST || 'N/A') + '\nDB_USER: ' + (process.env.DB_USER || 'N/A'));
+              });
+              server.listen(port, '0.0.0.0', () => {
+                console.log('Node.js server running on port', port);
+              });
+              "
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # Use ConfigMap for non-sensitive config (from Task 12)
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: DB_USER
+            # Use Secret for sensitive data (from Task 12)
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: DB_PASSWORD
+            # Application port
+            - name: PORT
+              value: "3000"
+          volumeMounts:
+            - name: app-storage
+              mountPath: /app/data
+      volumes:
+        # Use ReadWriteMany PVC from Task 13
+        - name: app-storage
+          persistentVolumeClaim:
+            claimName: block-pvc
