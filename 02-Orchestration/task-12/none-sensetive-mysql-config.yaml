@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: game-demo
+  namespace: ivolve
+data:
+
+  DB_HOST: "TOPA"
+  DB_USER: "USER"
