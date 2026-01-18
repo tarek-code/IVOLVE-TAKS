@@ -337,6 +337,12 @@ curl http://localhost:9100/metrics
 
 **Why this works:** When you're inside the pod, `localhost:9100` refers to the node-exporter service running in the same container, so it works directly.
 
+**Screenshot: Confirm Metrics Exposure by Accessing Pod Exec**
+
+![Confirm Metrics Exposure by Accessing Pod Exec](screenshots/Confirm-correct%20metrics-exposure%20by-accessing-pode-exec.png)
+
+**Note:** The screenshot shows accessing metrics from inside the pod using `wget`, which demonstrates that the metrics endpoint is working correctly.
+
 **Method 3: Access via Pod IP from Another Pod**
 
 **Get pod IP:**
@@ -394,7 +400,6 @@ curl http://localhost:9100/metrics
 
 **Screenshot: Metrics Endpoint**
 
-![Metrics Endpoint](screenshots/metrics-endpoint.png)
 
 **Verify specific metrics:**
 
@@ -466,7 +471,8 @@ task-19/
 └── screenshots/                   # Lab screenshots
     ├── create-namespace.png                    # Create monitoring namespace
     ├── daemonset.png                           # DaemonSet verification
-    └── validate-pods-is-run-in-all-nodes.png    # Pods running on all nodes
+    ├── validate-pods-is-run-in-all-nodes.png    # Pods running on all nodes
+    └── Confirm-correct metrics-exposure by-accessing-pode-exec.png  # Metrics exposure via pod exec
 ```
 
 ## Key Concepts
