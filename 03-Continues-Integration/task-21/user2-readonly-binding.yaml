@@ -1,0 +1,14 @@
+# ClusterRoleBinding: Binds the built-in 'view' ClusterRole to user2 cluster-wide.
+# user2 gets read-only (get, list, watch) on most resources in ALL namespaces; cannot view Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: user2-readonly-binding
+subjects:
+  - kind: User
+    name: user2
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
