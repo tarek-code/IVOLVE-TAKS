@@ -1165,8 +1165,8 @@ pipeline {
 ### Complete Setup Checklist
 
 - [ ] Shared library created (7 functions in `vars/`)
-- [ ] Shared library copied to Jenkins (`/var/jenkins_home/shared-library`)
-- [ ] Shared library configured in Jenkins UI
+- [ ] Shared library is in Git repository (or copied to Jenkins if using filesystem)
+- [ ] Shared library configured in Jenkins UI (with Library Path: `03-Continues-Integration/task-23/shared-library` if using Git)
 - [ ] Kubernetes Plugin installed
 - [ ] Kubernetes Cloud configured
 - [ ] Pod Template created with label `jenkins-agent`
@@ -1352,7 +1352,7 @@ This section clearly shows which steps are done on **MASTER** vs **SLAVE**.
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ Step 3: Create agent pod in K8s (SLAVE)         │  │
 │  │ Step 3: Configure agent in Jenkins UI (MASTER)  │  │
-│  │ Step 4: Install tools on agent pod (SLAVE)        │  │
+│  │ Step 4: Verify agent connection (SLAVE)            │  │
 │  └──────────────────────────────────────────────────┘  │
 └────────────────────┬────────────────────────────────────┘
                      │
@@ -1370,22 +1370,31 @@ This section clearly shows which steps are done on **MASTER** vs **SLAVE**.
 
 | Step | Action | Where | Why |
 |------|--------|-------|-----|
-| 1 | Copy shared library | **Master pod** | Master loads and distributes it |
+| 1 | Set up shared library (Git) | **Git Repository** | Master loads from Git |
 | 2 | Configure shared library | **Master UI** | Master needs to know where library is |
 | 3A | Create agent pod | **K8s cluster (SLAVE)** | Pod will execute builds |
 | 3B | Configure agent | **Master UI** | Master needs to know about agent |
-| 4 | Install tools | **Agent pod (SLAVE)** | Agent needs tools to run pipeline |
+| 4 | Verify agent connection | **Agent pod (SLAVE)** | Agent must be connected before running pipeline |
 | 5-7 | Create pipeline | **Master UI** | Master manages jobs |
 | 8 | Run pipeline | **Agent pod (SLAVE)** | Agent executes all stages |
 
 ### Phase 1: Setup on Master (Do This First)
 
-#### Step 1: Copy Shared Library **(MASTER)**
+#### Step 1: Set Up Shared Library Repository **(MASTER)**
 
-**Where:** Jenkins Master pod
+**Where:** Git Repository
 
-**Action:** Copy files from your local machine to Jenkins master pod
+**Action:** Ensure shared library is in your Git repository
 
+The shared library should be in your Git repository at: `03-Continues-Integration/task-23/shared-library/`
+
+**If using Git (Recommended - Current Setup):**
+- Shared library is automatically fetched from Git
+- No need to copy files manually
+- Jenkins will fetch the latest version on each pipeline run
+- Make sure Library Path is set to: `03-Continues-Integration/task-23/shared-library`
+
+**If using filesystem (Alternative):**
 ```bash
 # On your local machine
 kubectl cp shared-library jenkins/<master-pod>:/var/jenkins_home/shared-library -n jenkins
@@ -1432,33 +1441,27 @@ kubectl apply -f jenkins-agent-config.yaml
 
 **Why master?** Master needs to know about the agent to send it work.
 
-#### Step 4: Install Tools on Agent Pod **(SLAVE)**
+#### Step 4: Verify Agent Connection **(SLAVE)**
 
-**Where:** Jenkins Agent pod (in Kubernetes)
+**Where:** Jenkins Master (Web UI) and Kubernetes cluster
 
-**Action:** Install Docker, kubectl, Maven, Trivy on the agent
+**Action:** Verify the agent pod is running and connected to Jenkins
 
-```bash
-# Exec into agent pod
-kubectl exec -it -n jenkins jenkins-agent -- bash
+1. **Check agent pod status:**
+   ```bash
+   kubectl get pods -n jenkins | grep jenkins-agent
+   ```
 
-# Install tools
-apt-get update
-apt-get install -y maven curl ca-certificates
+2. **Verify agent is connected in Jenkins UI:**
+   - Go to **Manage Jenkins** → **System Configuration** → **Nodes**
+   - You should see `jenkins-agent` with a green icon (Connected)
 
-# Install kubectl
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-chmod +x kubectl
-mv kubectl /usr/local/bin/
+![Agent Node Status](screenshots/nodes-to-show-agent.png)
 
-# Install Trivy
-wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
-echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee -a /etc/apt/sources.list.d/trivy.list
-apt-get update
-apt-get install -y trivy
-```
-
-**Why slave?** Agent needs these tools to run the pipeline stages.
+**Note:** Tools (Docker, kubectl, Maven, Trivy) are either:
+- Pre-installed in a custom agent image (using `Dockerfile.agent`)
+- Installed automatically by the shared library functions when needed
+- Available via volume mounts (Docker is mounted from host node)
 
 ### Phase 3: Create and Run Pipeline
 
@@ -1482,7 +1485,7 @@ apt-get install -y trivy
 
 **What happens:**
 1. You click "Build Now" in Jenkins UI (on master)
-2. Master loads shared library
+2. Master loads shared library from Git
 3. Master sends pipeline code to agent
 4. **Agent executes all 7 stages:**
    - RunUnitTest → On agent
@@ -1491,9 +1494,11 @@ apt-get install -y trivy
    - ScanImage → On agent
    - PushImage → On agent
    - RemoveImageLocally → On agent
-   - DeployOnK8s → On agent
+   - DeployOnK8s → On agent (deletes old deployment, creates new one with correct port 8080)
 5. Agent sends results back to master
 6. You see results in Jenkins UI
+
+![Pipeline Success](screenshots/pipline-successfull.png)
 
 **Why slave?** Agent has the tools and resources to execute builds.
 
@@ -1501,15 +1506,15 @@ apt-get install -y trivy
 
 Before running pipeline, verify:
 
-- [ ] Shared library copied to master pod
-- [ ] Shared library configured in Jenkins UI
+- [ ] Shared library configured in Jenkins UI (using Git with Library Path: `03-Continues-Integration/task-23/shared-library`)
 - [ ] Agent pod created in Kubernetes (`kubectl get pods -n jenkins`)
 - [ ] Agent configured in Jenkins UI (Manage Jenkins → System Configuration → Nodes)
 - [ ] Agent shows as "Connected" (green icon)
-- [ ] Tools installed on agent (Docker, kubectl, Maven, Trivy)
 - [ ] Pipeline job created
 - [ ] Pipeline configured to use shared library
 - [ ] Pipeline configured to run on agent (`agent { label 'jenkins-agent' }`)
+- [ ] Docker Hub credentials configured (ID: `dockerhub-credentials`)
+- [ ] Docker Hub username environment variable set (if using `env.DOCKERHUB_USERNAME`)
 
 ### Common Questions
 
@@ -1608,15 +1613,17 @@ The shared library can be stored in:
    **Retrieval Method:**
    - Select **Legacy SCM** (works for both Git and filesystem)
    
-   **If using Git (Option A):**
+   **If using Git (Option A - Recommended):**
+   - **Retrieval Method**: Select **Modern SCM**
    - **Source Code Management**: Select **Git**
    - **Repositories**: Click **Add Repository**
      - **Repository URL**: Enter your Git repository URL
-       - Example: `https://github.com/YOUR_USERNAME/ivolve-jenkins-shared-library.git`
+       - Example: `https://github.com/tarek-code/IVOLVE-TAKS.git` (if shared library is in a subdirectory)
      - **Credentials**: Add if repository is private
    - **Branches to build**: Click **Add Branch**
      - **Branch Specifier**: `*/main` or `*/master`
-   - **Library Path (optional)**: Leave empty (Git repo root is used)
+   - **Library Path (optional)**: `03-Continues-Integration/task-23/shared-library` ⚠️ **CRITICAL if library is in subdirectory!**
+     - This tells Jenkins where the shared library folder is inside your Git repository
    
    **If using Local Filesystem (Option B):**
    - **Retrieval method**: **Legacy SCM**
@@ -1628,6 +1635,8 @@ The shared library can be stored in:
 
 5. Click **Save** at the bottom of the page
 
+![Trusted Pipeline Library Configuration](screenshots/trusted-pipline-lib.png)
+
 **Verify Configuration:**
 - Go to **Manage Jenkins** → **System Information**
 - Look for "Pipeline Libraries" or "Global Trusted Pipeline Libraries" section
@@ -1637,6 +1646,7 @@ The shared library can be stored in:
 - If library not found: Check the name matches exactly (case-sensitive)
 - If path not working: Verify files are at `/var/jenkins_home/shared-library` inside Jenkins pod
 - If using Git: Make sure repository is accessible and branch exists
+- **Important for Git**: Set **Library Path** to `03-Continues-Integration/task-23/shared-library` if library is in a subdirectory
 
 ---
 
@@ -1781,105 +1791,47 @@ If the agent doesn't connect automatically:
 
 ---
 
-### Step 4: Install Required Tools on Agent Pod **(SLAVE)**
+### Step 4: Verify Agent Connection and Tools **(SLAVE)**
 
-**Where:** Jenkins Agent pod (in Kubernetes)
+**Where:** Jenkins Master (Web UI) and Kubernetes cluster
 
-**What:** Install Docker, kubectl, Maven, and Trivy on the agent pod
+**What:** Verify the agent pod is running and connected
 
-**The agent needs these tools to run the pipeline:**
-- **Docker** (for building images) - Already available via volume mount
-- **kubectl** (for deploying to K8s)
-- **Maven** (for building Java apps)
-- **Trivy** (for image scanning - will be installed automatically by shared library, but pre-installing is faster)
+1. **Check agent pod status:**
+   ```bash
+   kubectl get pods -n jenkins | grep jenkins-agent
+   ```
 
-#### Option A: Install Tools Directly in Pod (Quick Method)
+2. **Verify agent is connected in Jenkins UI:**
+   - Go to **Manage Jenkins** → **System Configuration** → **Nodes**
+   - You should see `jenkins-agent` with a green icon (Connected)
+
+![Agent Node Status](screenshots/nodes-to-show-agent.png)
+
+**About Tools on Agent:**
+
+The agent needs these tools to run the pipeline:
+- **Docker** - Available via volume mount from host node (configured in `jenkins-agent-config.yaml`)
+- **kubectl** - Installed automatically by shared library if needed, or use custom agent image
+- **Maven** - Installed automatically by shared library if needed, or use custom agent image  
+- **Trivy** - Installed automatically by `scanImage` function if not present
+
+**Note:** For persistent tools installation, use the provided `Dockerfile.agent` to build a custom agent image with all tools pre-installed. See `Dockerfile.agent` for details.
+
+**Important - Trivy Installation Note:**
+
+If you need to install Trivy manually and encounter `apt-key: command not found` error, use direct download method:
 
 ```bash
-# Exec into the agent pod
-kubectl exec -it -n jenkins jenkins-agent -- bash
-
-# Switch to root (pod runs as root already, but verify)
-whoami  # Should show: root
-
-# Install required packages
-apt-get update
-apt-get install -y \
-    maven \
-    curl \
-    ca-certificates \
-    wget \
-    gnupg \
-    lsb-release
-
-# Install kubectl
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-chmod +x kubectl
-mv kubectl /usr/local/bin/kubectl
-kubectl version --client
-
-# Install Trivy
-wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
-echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee -a /etc/apt/sources.list.d/trivy.list
-apt-get update
-apt-get install -y trivy
+# Direct download method (when apt-key is not available)
+wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.54.0_Linux-64bit.tar.gz
+tar -xzf trivy_0.54.0_Linux-64bit.tar.gz
+mv trivy /usr/local/bin/trivy
+chmod +x /usr/local/bin/trivy
 trivy --version
-
-# Verify Docker is accessible
-docker --version
-docker ps
-
-# Exit the pod
-exit
 ```
 
-**Note:** These changes are **temporary** - they'll be lost if the pod restarts. For permanent installation, use Option B.
-
-#### Option B: Create Custom Agent Image with Tools (Permanent Method)
-
-This creates a custom Docker image with all tools pre-installed.
-
-1. **Build custom agent image:**
-
-   Use the provided `Dockerfile.agent`:
-   
-   ```bash
-   # Build the image
-   docker build -f Dockerfile.agent -t your-username/jenkins-agent:latest .
-   
-   # Push to Docker Hub (or your registry)
-   docker push your-username/jenkins-agent:latest
-   ```
-
-2. **Update the YAML file:**
-
-   Edit `jenkins-agent-config.yaml`:
-   
-   ```yaml
-   containers:
-   - name: jenkins-agent
-     image: your-username/jenkins-agent:latest  # Changed from jenkins/inbound-agent:latest
-     # ... rest of config
-   ```
-
-3. **Recreate the pod:**
-
-   ```bash
-   # Delete old pod
-   kubectl delete pod jenkins-agent -n jenkins
-   
-   # Create new pod with custom image
-   kubectl apply -f jenkins-agent-config.yaml
-   ```
-
-**Verify Tools are Installed:**
-
-```bash
-# Check tools in agent pod
-kubectl exec -it -n jenkins jenkins-agent -- bash -c "mvn -version && kubectl version --client && trivy --version && docker --version"
-```
-
-**Note:** Trivy will be installed automatically by the `scanImage` shared library function if not present, but pre-installing it is faster.
+The shared library `scanImage` function will automatically install Trivy if it's not found, so manual installation is optional.
 
 ---
 
@@ -2013,58 +1965,22 @@ This creates a permanent agent pod that stays running.
      - **Labels**: `jenkins-agent`
    - Click **Save**
 
-### Step 4: Install Required Tools on Agent
+### Step 4: Verify Agent Connection
 
-The agent needs:
+**Where:** Jenkins Master (Web UI)
 
-- **Docker** (for building images)
-- **kubectl** (for deploying to K8s)
-- **Maven** (for building Java apps)
-- **Trivy** (for image scanning - will be installed automatically by shared library)
+**What:** Verify the agent is connected and ready
 
-**If using Kubernetes Plugin (Dynamic Agents):**
+1. Go to **Manage Jenkins** → **System Configuration** → **Nodes**
+2. Verify `jenkins-agent` shows as "Connected" (green icon)
 
-Create a custom agent image with all tools:
+**About Tools:**
 
-1. **Create Dockerfile for agent:**
+Tools are handled automatically:
+- **Docker** - Available via volume mount from host
+- **kubectl, Maven, Trivy** - Installed automatically by shared library functions when needed
 
-   ```dockerfile
-   FROM jenkins/inbound-agent:latest
-
-   USER root
-
-   # Install Docker CLI
-   RUN apt-get update && \
-       apt-get install -y \
-       curl \
-       ca-certificates \
-       maven \
-       && rm -rf /var/lib/apt/lists/*
-
-   # Install kubectl
-   RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
-       chmod +x kubectl && \
-       mv kubectl /usr/local/bin/
-
-   # Install Trivy
-   RUN wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add - && \
-       echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee -a /etc/apt/sources.list.d/trivy.list && \
-       apt-get update && \
-       apt-get install -y trivy
-
-   USER jenkins
-   ```
-2. **Build and push image:**
-
-   ```bash
-   docker build -t your-username/jenkins-agent:latest .
-   docker push your-username/jenkins-agent:latest
-   ```
-3. **Update Kubernetes Plugin pod template:**
-
-   - Change **Docker image** from `jenkins/inbound-agent:latest` to `your-username/jenkins-agent:latest`
-
-**See Step 4 above for detailed instructions on installing tools on the static agent pod.**
+For persistent installation, use `Dockerfile.agent` to build a custom agent image.
 
 ### Step 6: Configure Pipeline **(MASTER)**
 
@@ -2106,7 +2022,7 @@ Ensure these credentials are configured in Jenkins (same as Lab 22):
 
 **What happens:**
 - Pipeline starts on **Jenkins Master** (you click Build Now)
-- Master loads shared library from `/var/jenkins_home/shared-library`
+- Master loads shared library from Git (or filesystem if configured)
 - Master sends pipeline code to **Jenkins Agent** pod
 - **All 7 stages execute on the agent pod:**
   1. RunUnitTest - Runs on agent
@@ -2122,6 +2038,36 @@ Ensure these credentials are configured in Jenkins (same as Lab 22):
 **Verify it's running on agent:**
 - In console output, look for: "Running on jenkins-agent"
 - Check agent pod logs: `kubectl logs jenkins-agent -n jenkins -f`
+
+4. **Verify deployment was successful:**
+
+   ```bash
+   kubectl get deployment jenkins-app -n ivolve
+   kubectl get pods -n ivolve -l app=jenkins-app
+   ```
+
+![Pipeline Success](screenshots/pipline-successfull.png)
+
+![Application Working](screenshots/make-sure-jenkins-app-working.png)
+
+## Shared Library Structure
+
+The shared library is organized as follows:
+
+```
+shared-library/
+├── vars/                    # Global variables (pipeline steps)
+│   ├── runUnitTest.groovy
+│   ├── buildApp.groovy
+│   ├── buildImage.groovy
+│   ├── scanImage.groovy
+│   ├── pushImage.groovy
+│   ├── removeImageLocally.groovy
+│   └── deployOnK8s.groovy
+└── src/                     # Source files (classes)
+    └── org/ivolve/
+        └── PipelineUtils.groovy
+```
 
 ## Shared Library Functions Explained
 
@@ -2197,9 +2143,11 @@ buildImage('myuser/jenkins-app:1', '.')
 
 **Behavior:**
 
-- Installs Trivy if not present
+- Installs Trivy if not present (automatically handles `apt-key` unavailability by using direct download method)
 - Scans image for HIGH and CRITICAL vulnerabilities
 - Does not fail pipeline on findings (logs warnings)
+
+**Important Note:** If you encounter `apt-key: command not found` error when installing Trivy manually, the `scanImage` function automatically handles this by falling back to direct download method. No manual intervention needed - the function handles both installation methods automatically.
 
 **Usage:**
 
@@ -2261,11 +2209,14 @@ removeImageLocally('myuser/jenkins-app:1')
 
 **Behavior:**
 
-- Creates deployment.yaml if it doesn't exist
+- Creates deployment.yaml if it doesn't exist (with correct port 8080 for Spring Boot apps)
 - Updates image in deployment.yaml
+- Fixes port configuration (3000 → 8080) if needed
+- Deletes existing deployment before applying new one (clean deployment)
 - Creates namespace if needed
 - Applies deployment to cluster
 - Waits for rollout
+- Shows pod logs and events for debugging
 
 **Usage:**
 
@@ -2338,16 +2289,26 @@ pipeline {
 
 ### Trivy Installation Fails
 
-**Error:** Trivy scan fails during installation
+**Error:** Trivy scan fails with `apt-key: command not found` or installation errors
 
 **Solution:**
+The `scanImage` shared library function automatically handles this:
+1. First tries apt installation (if `apt-key` is available)
+2. Automatically falls back to direct download method if `apt-key` fails
+3. No manual intervention needed - the function handles both methods
 
-1. Agent needs root/sudo access for apt-get
-2. Or pre-install Trivy on agent image
-3. Or use Trivy Docker container instead:
-   ```groovy
-   sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ${imageName}"
-   ```
+**If you need to install Trivy manually and encounter `apt-key: command not found`:**
+```bash
+# Direct download method (works when apt-key is not available)
+TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//')
+wget https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz
+tar -xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz
+mv trivy /usr/local/bin/trivy
+chmod +x /usr/local/bin/trivy
+trivy --version
+```
+
+**Note:** Manual installation is optional since the `scanImage` function handles Trivy installation automatically.
 
 ### Agent Cannot Access Docker
 
@@ -2360,15 +2321,6 @@ pipeline {
 3. Verify Docker binary is in PATH
 4. Check volume mounts in agent configuration
 
-## Screenshots
-
-Add screenshots for:
-
-- Shared library configuration in Jenkins
-- Agent configuration and status
-- Pipeline execution on agent
-- Shared library function execution
-- Successful deployment
 
 ## Summary
 
