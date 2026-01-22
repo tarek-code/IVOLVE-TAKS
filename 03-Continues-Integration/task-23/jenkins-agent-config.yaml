@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jenkins-agent
+  namespace: jenkins
+spec:
+  containers:
+  - name: jenkins-agent
+    image: jenkins/inbound-agent:latest
+    env:
+    - name: JENKINS_URL
+      value: "http://jenkins-service.jenkins.svc.cluster.local:8080"
+    - name: JENKINS_SECRET
+      value: ""  # Will be set by Jenkins when agent connects
+    - name: JENKINS_AGENT_NAME
+      value: "jenkins-agent"
+    - name: JENKINS_AGENT_WORKDIR
+      value: "/home/jenkins/agent"
+    volumeMounts:
+    - name: agent-workdir
+      mountPath: /home/jenkins/agent
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+    - name: docker-bin
+      mountPath: /usr/bin/docker
+    securityContext:
+      runAsUser: 0  # Run as root for Docker access
+  volumes:
+  - name: agent-workdir
+    emptyDir: {}
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+      type: Socket
+  - name: docker-bin
+    hostPath:
+      path: /usr/bin/docker
+      type: File
+  restartPolicy: Never
+---
+# Alternative: Use Kubernetes Plugin for dynamic agents
+# This is configured in Jenkins UI: Manage Jenkins -> Configure Clouds -> Kubernetes

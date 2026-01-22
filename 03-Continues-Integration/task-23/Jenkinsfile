@@ -1,0 +1,124 @@
+@Library('ivolve-shared-library') _
+
+pipeline {
+    agent {
+        label 'jenkins-agent'  // Use Jenkins agent/slave
+    }
+    
+    environment {
+        DOCKERHUB_USER = "${env.DOCKERHUB_USERNAME ?: 'your-username'}"
+        DOCKERHUB_REPO = "${DOCKERHUB_USER}/jenkins-app"
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        K8S_NAMESPACE = 'ivolve'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "Cloning repository..."
+                script {
+                    def useManualClone = false
+                    try {
+                        checkout scm
+                        echo "Using checkout scm (Pipeline from SCM)"
+                    } catch (Exception e) {
+                        echo "checkout scm not available, cloning manually..."
+                        useManualClone = true
+                        sh """
+                            rm -rf Jenkins_App || true
+                            git clone https://github.com/Ibrahim-Adel15/Jenkins_App.git
+                        """
+                    }
+                    env.USE_MANUAL_CLONE = useManualClone.toString()
+                }
+            }
+        }
+        
+        stage('RunUnitTest') {
+            steps {
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    runUnitTest(workDir)
+                }
+            }
+        }
+        
+        stage('BuildApp') {
+            steps {
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    buildApp(workDir)
+                }
+            }
+        }
+        
+        stage('BuildImage') {
+            steps {
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    buildImage(imageName, workDir)
+                }
+            }
+        }
+        
+        stage('ScanImage') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    scanImage(imageName)
+                }
+            }
+        }
+        
+        stage('PushImage') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    pushImage(imageName)
+                }
+            }
+        }
+        
+        stage('RemoveImageLocally') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    removeImageLocally(imageName)
+                }
+            }
+        }
+        
+        stage('DeployOnK8s') {
+            steps {
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    deployOnK8s(imageName, K8S_NAMESPACE, 'deployment.yaml', workDir)
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "============================================"
+            echo "POST ACTION: ALWAYS"
+            echo "Pipeline execution completed"
+            echo "============================================"
+            deleteDir()
+        }
+        success {
+            echo "============================================"
+            echo "POST ACTION: SUCCESS"
+            echo "Pipeline succeeded! Application deployed."
+            echo "============================================"
+        }
+        failure {
+            echo "============================================"
+            echo "POST ACTION: FAILURE"
+            echo "Pipeline failed! Check logs for details."
+            echo "============================================"
+        }
+    }
+}
