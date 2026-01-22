@@ -1,0 +1,180 @@
+@Library('ivolve-shared-library@main') _
+
+pipeline {
+    agent {
+        label 'jenkins-agent'  // Use Jenkins agent/slave
+    }
+    
+    environment {
+        DOCKERHUB_USER = "${env.DOCKERHUB_USERNAME ?: 'your-username'}"
+        DOCKERHUB_REPO = "${DOCKERHUB_USER}/jenkins-app"
+        IMAGE_TAG = "${env.BUILD_NUMBER}"  // Use build number as tag
+        GIT_REPO_URL = "${env.GIT_REPO_URL ?: 'https://github.com/tarek-code/IVOLVE-TAKS.git'}"  // IVOLVE-TAKS repository
+        GIT_BRANCH = "${env.GIT_BRANCH ?: 'main'}"  // Branch to push updates to
+        DEPLOYMENT_FILE = "04-GitOps/task-25/deployment.yaml"  // Path to deployment.yaml
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "============================================"
+                echo "Stage: Checkout"
+                echo "============================================"
+                echo "Image Tag: ${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                echo "============================================"
+                
+                // Checkout the application repository (for building)
+                dir('app-source') {
+                    script {
+                        if (env.APP_REPO_URL) {
+                            checkout([$class: 'GitSCM', 
+                                     branches: [[name: '*/main']],
+                                     userRemoteConfigs: [[url: env.APP_REPO_URL]]])
+                        } else {
+                            // Clone from default Jenkins_App repo
+                            sh """
+                                git clone https://github.com/Ibrahim-Adel15/Jenkins_App.git .
+                            """
+                        }
+                    }
+                }
+                
+                // Checkout the GitOps repository (for updating deployment.yaml)
+                dir('gitops-repo') {
+                    checkout scm  // This should be the GitOps repository
+                }
+            }
+        }
+        
+        stage('BuildApp') {
+            steps {
+                script {
+                    def workDir = 'app-source'
+                    echo "Building app in: ${workDir}"
+                    buildApp(workDir)
+                }
+            }
+        }
+        
+        stage('BuildImage') {
+            steps {
+                script {
+                    def workDir = 'app-source'
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    echo "Building image: ${imageName}"
+                    buildImage(imageName, workDir)
+                }
+            }
+        }
+        
+        stage('PushImage') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    pushImage(imageName)
+                }
+            }
+        }
+        
+        stage('RemoveImageLocally') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    removeImageLocally(imageName)
+                }
+            }
+        }
+        
+        stage('UpdateDeploymentYaml') {
+            steps {
+                script {
+                    echo "============================================"
+                    echo "Stage: UpdateDeploymentYaml"
+                    echo "============================================"
+                    
+                    dir('gitops-repo') {
+                        // Update the image tag in deployment.yaml
+                        def newImage = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                        echo "Updating deployment.yaml with image: ${newImage}"
+                        
+                        sh """
+                            # Use sed to update the image tag in deployment.yaml
+                            sed -i 's|image: .*/jenkins-app:.*|image: ${newImage}|g' ${DEPLOYMENT_FILE}
+                            
+                            # Verify the change
+                            echo "Updated deployment.yaml:"
+                            grep -A 2 'image:' ${DEPLOYMENT_FILE} || true
+                        """
+                        
+                        // Verify the file was updated
+                        def updatedContent = readFile(DEPLOYMENT_FILE)
+                        if (!updatedContent.contains(newImage)) {
+                            error("Failed to update deployment.yaml with image: ${newImage}")
+                        }
+                        
+                        echo "Successfully updated ${DEPLOYMENT_FILE} with image: ${newImage}"
+                    }
+                }
+            }
+        }
+        
+        stage('PushToGitHub') {
+            steps {
+                script {
+                    echo "============================================"
+                    echo "Stage: PushToGitHub"
+                    echo "============================================"
+                    
+                    dir('gitops-repo') {
+                        withCredentials([usernamePassword(credentialsId: 'github-credentials', 
+                                                         usernameVariable: 'GIT_USER', 
+                                                         passwordVariable: 'GIT_PASSWORD')]) {
+                            sh """
+                                # Configure git
+                                git config user.name "Jenkins"
+                                git config user.email "jenkins@example.com"
+                                
+                                # Add the updated deployment.yaml
+                                git add ${DEPLOYMENT_FILE}
+                                
+                                # Commit the changes
+                                git commit -m "Update deployment image to ${DOCKERHUB_REPO}:${IMAGE_TAG} (Build #${BUILD_NUMBER})" || exit 0
+                                
+                                # Push to GitHub
+                                git remote set-url origin https://\${GIT_USER}:\${GIT_PASSWORD}@${GIT_REPO_URL#https://}
+                                git push origin ${GIT_BRANCH}
+                                
+                                echo "Successfully pushed updated deployment.yaml to ${GIT_BRANCH} branch"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "============================================"
+            echo "POST ACTION: ALWAYS"
+            echo "Build Number: ${BUILD_NUMBER}"
+            echo "Image: ${DOCKERHUB_REPO}:${IMAGE_TAG}"
+            echo "Pipeline execution completed"
+            echo "============================================"
+            deleteDir()
+        }
+        success {
+            echo "============================================"
+            echo "POST ACTION: SUCCESS"
+            echo "Pipeline succeeded! Image pushed and deployment.yaml updated in Git."
+            echo "ArgoCD will automatically detect the change and deploy the new version."
+            echo "============================================"
+        }
+        failure {
+            echo "============================================"
+            echo "POST ACTION: FAILURE"
+            echo "Pipeline failed! Check logs for details."
+            echo "============================================"
+        }
+    }
+}

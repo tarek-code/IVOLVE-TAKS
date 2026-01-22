@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins-app-gitops
+  namespace: argocd
+  # Add finalizer to ensure proper cleanup
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/tarek-code/IVOLVE-TAKS.git  # IVOLVE-TAKS repository
+    targetRevision: main  # Branch name
+    path: 04-GitOps/task-25  # Path to deployment.yaml in repository
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gitops  # Namespace where ArgoCD will deploy the application
+    
+  syncPolicy:
+    automated:
+      prune: true  # Delete resources when removed from Git
+      selfHeal: true  # Automatically sync when drift is detected
+    syncOptions:
+    - CreateNamespace=true  # Create namespace if it doesn't exist
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    
+  # Health check configuration
+  healthChecks:
+  - apiVersion: apps/v1
+    kind: Deployment
+    namespace: gitops
+    name: jenkins-app
