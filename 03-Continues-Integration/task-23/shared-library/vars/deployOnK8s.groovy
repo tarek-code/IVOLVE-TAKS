@@ -82,10 +82,15 @@ spec:
     app: jenkins-app
 """
             } else {
-                // Update existing deployment.yaml
+                // Update existing deployment.yaml with new image and ensure correct port
                 echo "Updating ${deploymentFile} with new image: ${imageName}"
                 sh """
+                    # Update image
                     sed -i 's|image: .*|image: ${imageName}|g' ${deploymentFile}
+                    # Ensure port is 8080 (fix if it was 3000)
+                    sed -i 's|containerPort: 3000|containerPort: 8080|g' ${deploymentFile}
+                    sed -i 's|port: 3000|port: 8080|g' ${deploymentFile}
+                    sed -i 's|targetPort: 3000|targetPort: 8080|g' ${deploymentFile}
                 """
             }
             

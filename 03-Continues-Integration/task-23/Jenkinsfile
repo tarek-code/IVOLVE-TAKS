@@ -1,4 +1,8 @@
-@Library('ivolve-shared-library') _
+@Library('ivolve-shared-library@main') _
+// Note: If using filesystem-based library (not Git), configure in Jenkins UI:
+// Manage Jenkins → Configure System → Global Pipeline Libraries
+// Set "Default version" to "master" or leave empty, then you can use:
+// @Library('ivolve-shared-library') _  (without @main)
 
 pipeline {
     agent {
