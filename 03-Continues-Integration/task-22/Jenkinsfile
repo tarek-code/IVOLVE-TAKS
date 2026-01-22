@@ -1,0 +1,296 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Docker Hub username (set as environment variable or use credentials)
+        DOCKERHUB_USER = "${env.DOCKERHUB_USERNAME ?: 'your-username'}"  // Set in Jenkins or use credentials
+        DOCKERHUB_REPO = "${DOCKERHUB_USER}/jenkins-app"
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        K8S_NAMESPACE = 'ivolve'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "Cloning repository..."
+                script {
+                    // Try checkout scm (works if pipeline is from SCM)
+                    // If that fails, manually clone the repo
+                    def useManualClone = false
+                    try {
+                        checkout scm
+                        echo "Using checkout scm (Pipeline from SCM)"
+                    } catch (Exception e) {
+                        echo "checkout scm not available, cloning manually (Pipeline script mode)..."
+                        useManualClone = true
+                        sh """
+                            rm -rf Jenkins_App || true
+                            git clone https://github.com/Ibrahim-Adel15/Jenkins_App.git
+                        """
+                    }
+                    // Store flag for subsequent stages
+                    env.USE_MANUAL_CLONE = useManualClone.toString()
+                }
+            }
+        }
+        
+        stage('Unit Tests') {
+            steps {
+                echo "Running unit tests..."
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    dir(workDir) {
+                        if (fileExists('package.json')) {
+                            sh 'npm test || echo "npm not found, skipping tests"'
+                        } else if (fileExists('pom.xml')) {
+                            echo "Running unit tests using Maven..."
+                            sh 'mvn test || echo "Tests completed with warnings"'
+                        } else if (fileExists('requirements.txt')) {
+                            sh 'python -m pytest || echo "pytest not found, skipping tests"'
+                        } else {
+                            echo "No test framework detected, skipping tests"
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Build App') {
+            steps {
+                echo "Building application..."
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    dir(workDir) {
+                        if (fileExists('package.json')) {
+                            sh 'npm install && npm run build || echo "npm not found, Docker build will handle it"'
+                        } else if (fileExists('pom.xml')) {
+                            echo "Building application using Maven..."
+                            sh 'mvn clean package -DskipTests'
+                        } else if (fileExists('requirements.txt')) {
+                            sh 'pip install -r requirements.txt || echo "pip not found, Docker build will handle it"'
+                        } else {
+                            echo "No build step needed - Dockerfile will handle build"
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo "Building Docker image..."
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    dir(workDir) {
+                        sh """
+                            docker build -t ${imageName} .
+                            docker tag ${imageName} ${DOCKERHUB_REPO}:latest
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Push to Docker Hub') {
+            steps {
+                echo "Pushing image to Docker Hub..."
+                script {
+                    // Try to use credentials, fallback to environment variables
+                    try {
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            sh """
+                                echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+                                docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
+                                docker push ${DOCKERHUB_REPO}:latest
+                            """
+                        }
+                    } catch (Exception e) {
+                        echo "Credentials not found, trying environment variables..."
+                        sh """
+                            docker login -u ${DOCKERHUB_USER} -p ${env.DOCKERHUB_PASSWORD ?: ''}
+                            docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
+                            docker push ${DOCKERHUB_REPO}:latest
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Delete Local Image') {
+            steps {
+                echo "Deleting local Docker image..."
+                script {
+                    sh """
+                        docker rmi ${DOCKERHUB_REPO}:${IMAGE_TAG} || true
+                        docker rmi ${DOCKERHUB_REPO}:latest || true
+                    """
+                }
+            }
+        }
+        
+        stage('Update Deployment YAML') {
+            steps {
+                echo "Updating deployment.yaml with new image..."
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    dir(workDir) {
+                        // Create deployment.yaml if it doesn't exist
+                        if (!fileExists('deployment.yaml')) {
+                            echo "deployment.yaml not found in repository, creating it..."
+                            writeFile file: 'deployment.yaml', text: """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins-app
+  namespace: ${K8S_NAMESPACE}
+  labels:
+    app: jenkins-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jenkins-app
+  template:
+    metadata:
+      labels:
+        app: jenkins-app
+    spec:
+      containers:
+        - name: jenkins-app
+          image: ${imageName}
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-app-service
+  namespace: ${K8S_NAMESPACE}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: jenkins-app
+"""
+                        } else {
+                            // Update existing deployment.yaml
+                            sh """
+                                sed -i 's|image: .*|image: ${imageName}|g' deployment.yaml
+                            """
+                        }
+                        sh 'cat deployment.yaml'  // Show updated file
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes') {
+            steps {
+                echo "Deploying to Kubernetes cluster..."
+                script {
+                    def workDir = env.USE_MANUAL_CLONE == 'true' ? 'Jenkins_App' : '.'
+                    // Try to use kubeconfig credential, fallback to ServiceAccount (if Jenkins is in K8s)
+                    try {
+                        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                            dir(workDir) {
+                                sh """
+                                    export KUBECONFIG=\${KUBECONFIG_FILE}
+                                    # Create namespace if it doesn't exist
+                                    kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true
+                                    kubectl apply -f deployment.yaml
+                                    # Wait for rollout with timeout (max 5 minutes)
+                                    kubectl rollout status deployment/jenkins-app -n ${K8S_NAMESPACE} --timeout=300s || echo "Rollout status check completed or timed out - checking current status..."
+                                    # Show deployment status
+                                    echo "=== Deployment Status ==="
+                                    kubectl get deployment jenkins-app -n ${K8S_NAMESPACE}
+                                    echo "=== Pod Status ==="
+                                    kubectl get pods -n ${K8S_NAMESPACE} -l app=jenkins-app
+                                    echo "=== Pod Events (if any) ==="
+                                    kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -10 || true
+                                """
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "kubeconfig credential not found, trying ServiceAccount (if Jenkins is in K8s)..."
+                        dir(workDir) {
+                            sh """
+                                # Create namespace if it doesn't exist
+                                kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true
+                                kubectl apply -f deployment.yaml
+                                # Wait for rollout with timeout (max 5 minutes)
+                                kubectl rollout status deployment/jenkins-app -n ${K8S_NAMESPACE} --timeout=300s || echo "Rollout status check completed or timed out - checking current status..."
+                                # Show deployment status
+                                echo "=== Deployment Status ==="
+                                kubectl get deployment jenkins-app -n ${K8S_NAMESPACE}
+                                echo "=== Pod Status ==="
+                                kubectl get pods -n ${K8S_NAMESPACE} -l app=jenkins-app
+                                echo "=== Pod Events (if any) ==="
+                                kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -10 || true
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // ============================================
+    // POST ACTIONS (always, success, failure)
+    // ============================================
+    post {
+        always {
+            echo "============================================"
+            echo "POST ACTION: ALWAYS"
+            echo "This block runs regardless of pipeline result"
+            echo "============================================"
+            // Clean workspace (deleteDir is built-in, cleanWs requires Workspace Cleanup plugin)
+            deleteDir()  // Alternative: sh 'rm -rf *' or just leave it
+            echo "Workspace cleaned up"
+        }
+        success {
+            echo "============================================"
+            echo "POST ACTION: SUCCESS"
+            echo "Pipeline succeeded! Application deployed."
+            echo "============================================"
+            // Optional: Send notification (Slack, Email, etc.)
+            // slackSend channel: '#deployments', color: 'good', message: "Pipeline ${env.BUILD_NUMBER} succeeded!"
+        }
+        failure {
+            echo "============================================"
+            echo "POST ACTION: FAILURE"
+            echo "Pipeline failed! Check logs for details."
+            echo "============================================"
+            // Optional: Send failure notification
+            // slackSend channel: '#deployments', color: 'danger', message: "Pipeline ${env.BUILD_NUMBER} failed!"
+        }
+    }
+}

@@ -1,0 +1,184 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jenkins
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: jenkins
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jenkins-deployer
+rules:
+  # Core resources needed for deployments
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Deployments, StatefulSets, DaemonSets
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Rollout status and restart capabilities
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "deployments/status"]
+    verbs: ["get", "update", "patch"]
+  # For checking rollout status
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  # For image scanning and security (if needed)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins-deployer-binding
+subjects:
+  - kind: ServiceAccount
+    name: jenkins
+    namespace: jenkins
+roleRef:
+  kind: ClusterRole
+  name: jenkins-deployer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "jenkins"
+  template:
+    metadata:
+      labels:
+        app: "jenkins"
+    spec:
+      serviceAccountName: jenkins
+      securityContext:
+        fsGroup: 999 # Docker group GID (usually 999)
+      containers:
+        - name: "jenkins"
+          image: jenkins/jenkins:lts
+          securityContext:
+            runAsUser: 0 # Run as root to access Docker socket (lab environment)
+          ports:
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 50000
+              name: jnlp-port
+          env:
+            - name: JAVA_OPTS
+              value: "-Djenkins.install.runSetupWizard=false"
+          command: ["/bin/sh"]
+          args:
+            - -c
+            - |
+              # Install Maven if not already installed
+              if [ ! -f /usr/bin/mvn ]; then
+                echo "Installing Maven..."
+                apt-get update && \
+                apt-get install -y maven && \
+                echo "Maven installed successfully"
+              else
+                echo "Maven already installed"
+              fi
+              # Install kubectl if not already installed
+              if [ ! -f /usr/local/bin/kubectl ]; then
+                echo "Installing kubectl..."
+                apt-get update && \
+                apt-get install -y curl ca-certificates && \
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+                chmod +x kubectl && \
+                mv kubectl /usr/local/bin/kubectl && \
+                echo "kubectl installed successfully"
+              else
+                echo "kubectl already installed"
+              fi
+              # Configure kubectl to use ServiceAccount (if running in K8s)
+              if [ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]; then
+                echo "Configuring kubectl to use ServiceAccount..."
+                mkdir -p /root/.kube
+                KUBERNETES_SERVICE_HOST=${KUBERNETES_SERVICE_HOST:-kubernetes.default.svc.cluster.local}
+                KUBERNETES_SERVICE_PORT=${KUBERNETES_SERVICE_PORT:-443}
+                kubectl config set-cluster kubernetes \
+                  --server=https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT} \
+                  --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                kubectl config set-credentials jenkins-sa \
+                  --token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                kubectl config set-context default \
+                  --cluster=kubernetes \
+                  --user=jenkins-sa \
+                  --namespace=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+                kubectl config use-context default
+                echo "kubectl configured successfully"
+              fi
+              # Start Jenkins
+              exec /usr/local/bin/jenkins.sh
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: docker-bin
+              mountPath: /usr/bin/docker
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+      volumes:
+        - name: "jenkins-home"
+          persistentVolumeClaim:
+            claimName: jenkins-pvc
+        - name: "docker-sock"
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+        - name: "docker-bin"
+          hostPath:
+            path: /usr/bin/docker
+            type: File
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "jenkins-service"
+  namespace: jenkins
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+      protocol: TCP
+      name: http
+    - port: 50000
+      targetPort: 50000
+      protocol: TCP
+      name: jnlp
+  selector:
+    app: "jenkins"

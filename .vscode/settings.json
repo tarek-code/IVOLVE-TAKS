@@ -1,0 +1,5 @@
+{
+    "yaml.schemas": {
+        "kubernetes://schema/v1%40service": "file:///d%3A/New%20folder/ivolve/task%201/IVOLVE-TAKS/03-Continues-Integration/task-22/jenkins-deployment.yaml"
+    }
+}
