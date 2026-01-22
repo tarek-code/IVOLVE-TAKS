@@ -15,9 +15,15 @@ spec:
       labels:
         app: jenkins-app
     spec:
+      # Toleration for tainted worker node (from Task 10)
+      tolerations:
+      - key: "node"
+        operator: "Equal"
+        value: "worker"
+        effect: "NoSchedule"
       containers:
       - name: jenkins-app
-        image: your-username/jenkins-app:latest  # This will be updated by Jenkins pipeline
+        image: tarekadel/jenkins-app:latest # This will be updated by Jenkins pipeline
         ports:
         - containerPort: 8080
           name: http-port
@@ -51,9 +57,9 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 80
-    targetPort: 8080
-    protocol: TCP
-    name: http
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
   selector:
     app: jenkins-app
