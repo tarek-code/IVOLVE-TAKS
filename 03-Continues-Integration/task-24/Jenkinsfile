@@ -30,21 +30,40 @@ pipeline {
         
         stage('RunUnitTest') {
             steps {
-                runUnitTest('.')
+                script {
+                    // Work directory: Jenkins_App subdirectory if exists, otherwise root
+                    def workDir = fileExists('03-Continues-Integration/task-24/Jenkins_App') ? 
+                                   '03-Continues-Integration/task-24/Jenkins_App' : 
+                                   (fileExists('Jenkins_App') ? 'Jenkins_App' : '.')
+                    echo "Running unit tests in: ${workDir}"
+                    runUnitTest(workDir)
+                }
             }
         }
         
         stage('BuildApp') {
             steps {
-                buildApp('.')
+                script {
+                    // Work directory: Jenkins_App subdirectory if exists, otherwise root
+                    def workDir = fileExists('03-Continues-Integration/task-24/Jenkins_App') ? 
+                                   '03-Continues-Integration/task-24/Jenkins_App' : 
+                                   (fileExists('Jenkins_App') ? 'Jenkins_App' : '.')
+                    echo "Building app in: ${workDir}"
+                    buildApp(workDir)
+                }
             }
         }
         
         stage('BuildImage') {
             steps {
                 script {
+                    // Work directory: Jenkins_App subdirectory if exists, otherwise root
+                    def workDir = fileExists('03-Continues-Integration/task-24/Jenkins_App') ? 
+                                   '03-Continues-Integration/task-24/Jenkins_App' : 
+                                   (fileExists('Jenkins_App') ? 'Jenkins_App' : '.')
                     def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
-                    buildImage(imageName, '.')
+                    echo "Building image from: ${workDir}"
+                    buildImage(imageName, workDir)
                 }
             }
         }
@@ -79,9 +98,14 @@ pipeline {
         stage('DeployOnK8s') {
             steps {
                 script {
+                    // Work directory: Jenkins_App subdirectory if exists, otherwise root
+                    def workDir = fileExists('03-Continues-Integration/task-24/Jenkins_App') ? 
+                                   '03-Continues-Integration/task-24/Jenkins_App' : 
+                                   (fileExists('Jenkins_App') ? 'Jenkins_App' : '.')
                     def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
                     echo "Deploying to namespace: ${K8S_NAMESPACE}"
-                    deployOnK8s(imageName, K8S_NAMESPACE, 'deployment.yaml', '.')
+                    echo "Using work directory: ${workDir}"
+                    deployOnK8s(imageName, K8S_NAMESPACE, 'deployment.yaml', workDir)
                 }
             }
         }
