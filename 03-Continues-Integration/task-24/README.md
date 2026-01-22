@@ -2,6 +2,8 @@
 
 This lab demonstrates how to create a **Multi Branch Pipeline** in Jenkins that automatically deploys to different Kubernetes namespaces based on the Git branch.
 
+![All Branches Success](screenshots/all-brancjes-success-jenkins.png)
+
 ---
 
 ## 🎯 Lab Objectives
@@ -31,34 +33,71 @@ By the end of this lab, you will:
 
 ### Step 1: Prepare Git Repository with Multiple Branches
 
-**Where:** Your Git repository
+**Where:** Your Git repository (`https://github.com/tarek-code/IVOLVE-TAKS.git`)
 
-**What:** Clone the repository, add Dockerfile, and create 3 branches
+**What:** Create 3 branches (prod/stag/dev) from main, where each branch contains the **entire IVOLVE-TAKS repository** (same as main).
+
+#### Option A: Using IVOLVE-TAKS Repository (Recommended for this lab)
 
 1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/tarek-code/IVOLVE-TAKS.git
+   cd IVOLVE-TAKS
+   ```
+
+2. **Verify required files exist:**
+   ```bash
+   # Ensure you're on main branch
+   git checkout main
+   
+   # Verify Jenkins_App exists
+   ls -la 03-Continues-Integration/task-24/Jenkins_App/
+   # Should see: Dockerfile, pom.xml, src/
+   
+   # Verify Jenkinsfile exists
+   ls -la 03-Continues-Integration/task-24/Jenkinsfile
+   ```
+
+3. **Create and push branches:**
+   ```bash
+   # Create dev branch (copies everything from main)
+   git checkout -b dev
+   git push -u origin dev
+   
+   # Create stag branch (copies everything from main)
+   git checkout main
+   git checkout -b stag
+   git push -u origin stag
+   
+   # Create prod branch (copies everything from main)
+   git checkout main
+   git checkout -b prod
+   git push -u origin prod
+   
+   # Verify all branches
+   git branch -a
+   ```
+
+   **Result:** All branches (prod/stag/dev/main) now have the **same content** - the entire IVOLVE-TAKS repository!
+
+#### Option B: Using Separate Jenkins_App Repository
+
+If you prefer to use a separate repository for the application:
+
+1. **Clone the application repository:**
    ```bash
    git clone https://github.com/Ibrahim-Adel15/Jenkins_App.git
    cd Jenkins_App
    ```
-   
-   **Important:** This repository should contain **only the application code** (Dockerfile, pom.xml, src/, Jenkinsfile), NOT the entire IVOLVE-TAKS lab repository.
 
 2. **Verify required files exist:**
    ```bash
    ls -la
-   # Should see: Dockerfile, pom.xml, src/, Jenkinsfile
+   # Should see: Dockerfile, pom.xml, src/
    
-   # If Dockerfile doesn't exist, copy from task-24/Jenkins_App/Dockerfile
-   # If Jenkinsfile doesn't exist, copy from task-24/Jenkinsfile
+   # Copy Jenkinsfile if not present
+   cp ../IVOLVE-TAKS/03-Continues-Integration/task-24/Jenkinsfile .
    ```
-   
-   **Each branch should contain:**
-   - ✅ Dockerfile
-   - ✅ Jenkinsfile
-   - ✅ pom.xml (or package.json)
-   - ✅ src/ (application source code)
-   - ❌ NOT the entire IVOLVE-TAKS repository
-   - ❌ NOT task-22/, task-23/, task-24/ folders
 
 3. **Create and push branches:**
    ```bash
@@ -78,9 +117,6 @@ By the end of this lab, you will:
    git checkout main
    git checkout -b prod
    git push -u origin prod
-   
-   # Verify all branches
-   git branch -a
    ```
 
 4. **Verify branches on GitHub:**
@@ -98,7 +134,14 @@ By the end of this lab, you will:
 
 1. **Apply namespace YAML:**
    ```bash
-   kubectl apply -f namespaces.yaml
+   kubectl apply -f 03-Continues-Integration/task-24/namespaces.yaml
+   ```
+
+   Or use the script:
+   ```bash
+   cd 03-Continues-Integration/task-24
+   chmod +x create-namespaces.sh
+   ./create-namespaces.sh
    ```
 
 2. **Verify namespaces are created:**
@@ -127,6 +170,8 @@ By the end of this lab, you will:
 
 **What:** Create a Multi Branch Pipeline job
 
+#### 3.1 Create the Pipeline Job
+
 1. **Go to Jenkins Dashboard:**
    - Click **New Item**
 
@@ -135,31 +180,61 @@ By the end of this lab, you will:
    - **Type**: Select **Multibranch Pipeline**
    - Click **OK**
 
-3. **Configure Branch Sources:**
-   - **Branch Sources**: Click **Add source** → **Git**
-   - **Project Repository**: `https://github.com/Ibrahim-Adel15/Jenkins_App.git`
-   - **Credentials**: Add if repository is private
-   - **Behaviors**: 
-     - Click **Add** → **Discover branches**
-     - **Strategy**: **All branches**
-     - Click **Add** → **Filter by name (with wildcards)**
-       - **Include**: `prod`, `stag`, `dev`, `main` (or `master`)
-       - **Exclude**: Leave empty
-   - **Build Configuration**:
-     - **Mode**: **by Jenkinsfile**
-     - **Script Path**: `Jenkinsfile` (or `03-Continues-Integration/task-24/Jenkinsfile` if in subdirectory)
+#### 3.2 Configure Branch Sources
 
-4. **Configure Build Triggers:**
-   - **Build periodically**: Check if you want scheduled builds
-   - **Poll SCM**: Check and set interval (e.g., `H/5 * * * *` for every 5 minutes)
-   - Or use **GitHub webhooks** (recommended for automatic builds)
+**Click "Add source" → "Git"**
 
-5. **Configure Orphaned Item Strategy:**
-   - **Orphaned Item Strategy**: Check **Discard old items**
-   - **Days to keep old items**: `7`
-   - **Max # of old items to keep**: `10`
+##### Basic Configuration:
 
-6. **Click Save**
+- **Project Repository**: 
+  - ✅ **Option 1 (IVOLVE-TAKS)**: `https://github.com/tarek-code/IVOLVE-TAKS.git`
+  - ✅ **Option 2 (Separate Repo)**: `https://github.com/Ibrahim-Adel15/Jenkins_App.git`
+  
+- **Credentials**: 
+  - Select credentials if repository is private
+  - Or leave "- none -" if repository is public
+
+##### Behaviors (Click "Add"):
+
+1. **Discover branches**:
+   - **Strategy**: Select **"All branches"**
+   - Click **Add** again
+
+2. **Filter by name (with wildcards)**:
+   - **Include**: `prod`, `stag`, `dev`, `main` (or `master`)
+   - **Exclude**: Leave empty
+   - ⚠️ **Important**: This filters which branches Jenkins will create pipelines for
+
+##### Build Configuration:
+
+- **Mode**: Select **"by Jenkinsfile"**
+- **Script Path**: 
+  - ✅ **Option 1 (IVOLVE-TAKS)**: `03-Continues-Integration/task-24/Jenkinsfile` ⚠️ **IMPORTANT!**
+  - ✅ **Option 2 (Separate Repo)**: `Jenkinsfile`
+
+#### 3.3 Configure Build Triggers
+
+**Recommended Configuration:**
+
+- ✅ **Periodically if not otherwise run**: Check this
+  - **Interval**: `H/5 * * * *` (every 5 minutes)
+  
+**OR**
+
+- ✅ **Poll SCM**: Check this
+  - **Schedule**: `H/5 * * * *` (every 5 minutes)
+
+**OR** (Best option)
+
+- Use **GitHub Webhooks** for automatic builds on push (requires webhook configuration in GitHub)
+
+#### 3.4 Configure Orphaned Item Strategy
+
+- ✅ **Discard old items**: Check this
+- **Days to keep old items**: `7`
+- **Max # of old items to keep**: `10`
+
+#### 3.5 Click Save
 
 ---
 
@@ -267,6 +342,31 @@ Images are tagged with branch name and build number:
 
 This makes it easy to track which branch and build number each image came from.
 
+### Repository Structure
+
+**For IVOLVE-TAKS Repository:**
+```
+IVOLVE-TAKS/
+└── 03-Continues-Integration/
+    └── task-24/
+        ├── Jenkinsfile                    # Pipeline (Script Path points here)
+        └── Jenkins_App/                   # Application code
+            ├── Dockerfile
+            ├── pom.xml
+            └── src/
+```
+
+**For Separate Jenkins_App Repository:**
+```
+Jenkins_App/
+├── Dockerfile
+├── Jenkinsfile
+├── pom.xml
+└── src/
+```
+
+The Jenkinsfile automatically detects if source code is in `03-Continues-Integration/task-24/Jenkins_App/` or root directory.
+
 ---
 
 ## 📊 Pipeline Flow
@@ -337,6 +437,19 @@ K8S_NAMESPACE = "${env.BRANCH_NAME == 'prod' ? 'prod' :
                  (env.BRANCH_NAME == 'dev' ? 'dev' : 'default'))}"
 ```
 
+### Pipeline Stages
+
+All 7 stages from Lab 23 are reused:
+
+1. **Checkout** - Clones repository (branch-specific)
+2. **RunUnitTest** - Runs unit tests
+3. **BuildApp** - Builds application
+4. **BuildImage** - Builds Docker image (tagged with branch name)
+5. **ScanImage** - Scans for vulnerabilities
+6. **PushImage** - Pushes to Docker Hub
+7. **RemoveImageLocally** - Cleans up local image
+8. **DeployOnK8s** - Deploys to branch-specific namespace
+
 ---
 
 ## ✅ Verification Checklist
@@ -344,14 +457,16 @@ K8S_NAMESPACE = "${env.BRANCH_NAME == 'prod' ? 'prod' :
 Before running the pipeline, verify:
 
 - [ ] Git repository has 3 branches: `prod`, `stag`, `dev`
-- [ ] Dockerfile exists in the repository
+- [ ] Dockerfile exists in the repository (in `Jenkins_App/` or root)
 - [ ] Kubernetes namespaces created: `prod`, `stag`, `dev`
 - [ ] Multi Branch Pipeline job created in Jenkins
 - [ ] Branch sources configured correctly
+- [ ] Script Path is correct (`03-Continues-Integration/task-24/Jenkinsfile` for IVOLVE-TAKS)
+- [ ] Branch filter configured (Include: `prod`, `stag`, `dev`, `main`)
 - [ ] Jenkins agent is connected
 - [ ] Shared library is configured
 - [ ] Docker Hub credentials configured
-- [ ] Jenkinsfile is in the repository root (or correct path specified)
+- [ ] Jenkinsfile is in the repository (at correct path)
 
 ---
 
@@ -364,9 +479,20 @@ Before running the pipeline, verify:
 **Solution:**
 1. Check repository URL is correct
 2. Verify credentials if repository is private
-3. Check branch filter settings
+3. Check branch filter settings (Include: `prod`, `stag`, `dev`, `main`)
 4. Click **Scan Multibranch Pipeline Now** manually
 5. Check Jenkins logs: **Manage Jenkins** → **System Log**
+
+### Jenkinsfile Not Found
+
+**Problem:** Build fails saying Jenkinsfile not found
+
+**Solution:**
+1. Check Script Path is correct
+2. If using IVOLVE-TAKS repo, Script Path must be: `03-Continues-Integration/task-24/Jenkinsfile`
+3. Verify Jenkinsfile exists in the specified path
+4. Check branch has Jenkinsfile committed and pushed
+5. Verify path is correct (case-sensitive)
 
 ### Wrong Namespace Selected
 
@@ -387,6 +513,23 @@ Before running the pipeline, verify:
 3. Check agent pod has kubectl access
 4. Review deployment logs in console output
 
+### Pods Stuck in Pending Status
+
+**Problem:** Pods are created but remain in `Pending` status
+
+**Solution:**
+1. Check pod events: `kubectl get events -n <namespace> --sort-by=.lastTimestamp`
+2. Common causes:
+   - **Insufficient memory**: Scale down replicas or reduce resource requests
+   - **Node taints**: Check if nodes have taints that prevent scheduling
+3. Quick fix - scale down to 1 replica:
+   ```bash
+   kubectl scale deployment jenkins-app -n dev --replicas=1
+   kubectl scale deployment jenkins-app -n stag --replicas=1
+   kubectl scale deployment jenkins-app -n prod --replicas=1
+   ```
+4. Check node resources: `kubectl top nodes`
+
 ### Shared Library Not Found
 
 **Problem:** `@Library('ivolve-shared-library@main') _` fails
@@ -397,9 +540,107 @@ Before running the pipeline, verify:
 3. Ensure branch `main` exists in shared library repository
 4. Check Jenkins logs for library loading errors
 
+### Source Code Not Found
+
+**Problem:** Build fails because pom.xml or src/ not found
+
+**Solution:**
+1. Verify source code location:
+   - For IVOLVE-TAKS: `03-Continues-Integration/task-24/Jenkins_App/`
+   - For separate repo: root directory
+2. Check Jenkinsfile workDir logic (automatically detects location)
+3. Verify files exist in the branch
+
 ---
 
-## 📝 Summary
+## 📝 Implementation Summary
+
+### ✅ Requirements Checklist
+
+1. **Clone Dockerfile from: https://github.com/Ibrahim-Adel15/Jenkins_App.git**
+   - ✅ Complete - Repository cloned during pipeline execution
+
+2. **Push Dockerfile to your repo and create 3 branches (prod/stag/dev)**
+   - ✅ Complete - Branches created and pushed
+
+3. **Create 3 namespaces in K8S environment (prod/stag/dev)**
+   - ✅ Complete - Namespaces created via `namespaces.yaml`
+
+4. **Create Multibranch pipeline to automate deployment in namespace based on GitHub branch**
+   - ✅ Complete - Multi Branch Pipeline configured with branch-to-namespace mapping
+
+5. **Create Jenkins slave to run this pipeline**
+   - ✅ Complete - Reuses Jenkins agent from Lab 23
+
+6. **Use Shared Library**
+   - ✅ Complete - All 7 stages use shared library functions
+
+### 📁 File Structure
+
+```
+task-24/
+├── Jenkinsfile                    # Multi-branch pipeline definition
+├── namespaces.yaml                # K8s namespace definitions
+├── setup-branches.sh             # Script to create Git branches
+├── create-namespaces.sh          # Script to create K8s namespaces
+├── README.md                      # Complete documentation (this file)
+└── Jenkins_App/                   # Sample application
+    ├── Dockerfile
+    ├── pom.xml
+    └── src/
+```
+
+---
+
+## 🚀 Quick Start (5 Steps)
+
+### Step 1: Set Up Git Branches
+
+```bash
+# Clone IVOLVE-TAKS repository
+git clone https://github.com/tarek-code/IVOLVE-TAKS.git
+cd IVOLVE-TAKS
+
+# Create branches from main
+git checkout -b dev && git push -u origin dev
+git checkout main && git checkout -b stag && git push -u origin stag
+git checkout main && git checkout -b prod && git push -u origin prod
+```
+
+### Step 2: Create Kubernetes Namespaces
+
+```bash
+kubectl apply -f 03-Continues-Integration/task-24/namespaces.yaml
+kubectl get namespace prod stag dev
+```
+
+### Step 3: Configure Jenkins Multi Branch Pipeline
+
+1. **Jenkins UI** → **New Item** → **Multibranch Pipeline**
+2. **Name**: `jenkins-app-multibranch`
+3. **Branch Sources** → **Git**:
+   - **Repository**: `https://github.com/tarek-code/IVOLVE-TAKS.git`
+   - **Script Path**: `03-Continues-Integration/task-24/Jenkinsfile`
+   - **Behaviors**: Filter by name → Include: `prod`, `stag`, `dev`, `main`
+4. **Save**
+
+### Step 4: Scan and Run
+
+1. Click **Scan Multibranch Pipeline Now**
+2. Wait for branches to be detected
+3. Click on a branch → **Build Now**
+
+### Step 5: Verify
+
+```bash
+kubectl get deployment jenkins-app -n prod
+kubectl get deployment jenkins-app -n stag
+kubectl get deployment jenkins-app -n dev
+```
+
+---
+
+## 📚 Summary
 
 This lab demonstrates:
 
