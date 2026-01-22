@@ -3,15 +3,30 @@ kind: Pod
 metadata:
   name: jenkins-agent
   namespace: jenkins
+  labels:
+    app: jenkins-agent
+    role: agent
 spec:
+  serviceAccountName: jenkins  # Use jenkins service account with RBAC permissions
   containers:
   - name: jenkins-agent
     image: jenkins/inbound-agent:latest
+    # ⚠️ IMPORTANT: For persistent tools (kubectl, maven, trivy), use custom image:
+    # 1. Build: docker build -t your-username/jenkins-agent:latest -f Dockerfile.agent .
+    # 2. Push: docker push your-username/jenkins-agent:latest
+    # 3. Update image above to: your-username/jenkins-agent:latest
+    # See INSTALL-TOOLS.md for detailed instructions
     env:
     - name: JENKINS_URL
       value: "http://jenkins-service.jenkins.svc.cluster.local:8080"
+      # If Jenkins service has different name, update this
     - name: JENKINS_SECRET
-      value: ""  # Will be set by Jenkins when agent connects
+      value: "bc61c14d53973b1745b55b35fade90dd4b3976ea964f659fd851999e33f4e952"  # ⚠️ IMPORTANT: Get this from Jenkins UI and update before applying
+      # Steps:
+      # 1. Go to Manage Jenkins → System Configuration → Nodes → New Node
+      # 2. Create node named "jenkins-agent"
+      # 3. Copy the secret shown on the page
+      # 4. Update this value and reapply
     - name: JENKINS_AGENT_NAME
       value: "jenkins-agent"
     - name: JENKINS_AGENT_WORKDIR
@@ -27,7 +42,10 @@ spec:
       runAsUser: 0  # Run as root for Docker access
   volumes:
   - name: agent-workdir
-    emptyDir: {}
+    emptyDir: {}  # ⚠️ Ephemeral: workspace data is lost when pod is deleted
+    # For persistent workspace, use PersistentVolumeClaim instead:
+    # persistentVolumeClaim:
+    #   claimName: jenkins-agent-pvc
   - name: docker-sock
     hostPath:
       path: /var/run/docker.sock
@@ -36,7 +54,12 @@ spec:
     hostPath:
       path: /usr/bin/docker
       type: File
-  restartPolicy: Never
+  restartPolicy: Always  # Changed to Always so pod restarts if it crashes
 ---
-# Alternative: Use Kubernetes Plugin for dynamic agents
-# This is configured in Jenkins UI: Manage Jenkins -> Configure Clouds -> Kubernetes
+# Usage Instructions:
+# 1. Get JENKINS_SECRET from Jenkins UI (Manage Jenkins → Nodes → New Node)
+# 2. Update JENKINS_SECRET value above
+# 3. (Optional) Build custom image with tools: See INSTALL-TOOLS.md
+# 4. Apply: kubectl apply -f jenkins-agent-config.yaml
+# 5. Configure node in Jenkins UI (see README Step 3)
+# 6. Verify tools are installed (see INSTALL-TOOLS.md)

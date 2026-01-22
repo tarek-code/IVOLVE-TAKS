@@ -6,7 +6,7 @@ pipeline {
     }
     
     environment {
-        DOCKERHUB_USER = "${env.DOCKERHUB_USERNAME ?: 'your-username'}"
+        DOCKERHUB_USER = "${env.DOCKERHUB_USERNAME ?: 'your-username'}"  // ⚠️ UPDATE: Replace 'your-username' with your Docker Hub username
         DOCKERHUB_REPO = "${DOCKERHUB_USER}/jenkins-app"
         IMAGE_TAG = "${env.BUILD_NUMBER}"
         K8S_NAMESPACE = 'ivolve'

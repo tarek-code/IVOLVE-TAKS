@@ -40,7 +40,7 @@ spec:
         - name: jenkins-app
           image: ${imageName}
           ports:
-            - containerPort: 3000
+            - containerPort: 8080
               name: http
           resources:
             requests:
@@ -52,7 +52,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 8080
             initialDelaySeconds: 60
             periodSeconds: 10
             timeoutSeconds: 5
@@ -60,7 +60,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 8080
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -75,7 +75,7 @@ spec:
   type: ClusterIP
   ports:
     - port: 80
-      targetPort: 3000
+      targetPort: 8080
       protocol: TCP
       name: http
   selector:
@@ -95,24 +95,52 @@ spec:
                     sh """
                         export KUBECONFIG=\${KUBECONFIG_FILE}
                         kubectl create namespace ${namespace} --dry-run=client -o yaml | kubectl apply -f - || true
+                        echo "Deleting existing deployment (if exists)..."
+                        kubectl delete deployment jenkins-app -n ${namespace} --ignore-not-found=true || true
+                        echo "Applying new deployment..."
                         kubectl apply -f ${deploymentFile}
                         kubectl rollout status deployment/jenkins-app -n ${namespace} --timeout=300s || echo "Rollout status check completed or timed out"
                         echo "=== Deployment Status ==="
                         kubectl get deployment jenkins-app -n ${namespace}
                         echo "=== Pod Status ==="
                         kubectl get pods -n ${namespace} -l app=jenkins-app
+                        echo "=== Pod Events ==="
+                        kubectl get events -n ${namespace} --sort-by='.lastTimestamp' | grep jenkins-app | tail -5 || true
+                        echo "=== Checking Pod Logs (if pods exist) ==="
+                        sh '''
+                            for pod in $(kubectl get pods -n ''' + namespace + ''' -l app=jenkins-app -o jsonpath='{.items[*].metadata.name}'); do
+                                if [ ! -z "$pod" ]; then
+                                    echo "--- Logs for pod: $pod ---"
+                                    kubectl logs -n ''' + namespace + ''' $pod --tail=20 || echo "Could not get logs for $pod"
+                                fi
+                            done
+                        '''
                     """
                 }
             } catch (Exception e) {
                 echo "kubeconfig credential not found, trying ServiceAccount (if Jenkins is in K8s)..."
                 sh """
                     kubectl create namespace ${namespace} --dry-run=client -o yaml | kubectl apply -f - || true
+                    echo "Deleting existing deployment (if exists)..."
+                    kubectl delete deployment jenkins-app -n ${namespace} --ignore-not-found=true || true
+                    echo "Applying new deployment..."
                     kubectl apply -f ${deploymentFile}
                     kubectl rollout status deployment/jenkins-app -n ${namespace} --timeout=300s || echo "Rollout status check completed or timed out"
                     echo "=== Deployment Status ==="
                     kubectl get deployment jenkins-app -n ${namespace}
                     echo "=== Pod Status ==="
                     kubectl get pods -n ${namespace} -l app=jenkins-app
+                    echo "=== Pod Events ==="
+                    kubectl get events -n ${namespace} --sort-by='.lastTimestamp' | grep jenkins-app | tail -5 || true
+                    echo "=== Checking Pod Logs (if pods exist) ==="
+                    sh '''
+                        for pod in $(kubectl get pods -n ''' + namespace + ''' -l app=jenkins-app -o jsonpath='{.items[*].metadata.name}'); do
+                            if [ ! -z "$pod" ]; then
+                                echo "--- Logs for pod: $pod ---"
+                                kubectl logs -n ''' + namespace + ''' $pod --tail=20 || echo "Could not get logs for $pod"
+                            fi
+                        done
+                    '''
                 """
             }
         }

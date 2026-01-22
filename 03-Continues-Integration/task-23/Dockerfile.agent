@@ -1,5 +1,16 @@
 # Custom Jenkins Agent Image with All Required Tools
 # Build this image and use it in Kubernetes Plugin pod template
+#
+# This image includes:
+# - Maven (for building Java apps)
+# - kubectl (for deploying to Kubernetes)
+# - Trivy (for scanning Docker images)
+# - curl, wget, gnupg, lsb-release (supporting tools)
+#
+# Note: Docker CLI is NOT included in this image because it's mounted
+# from the host node via volume mounts in jenkins-agent-config.yaml
+#
+# See INSTALL-TOOLS.md for build and usage instructions
 
 FROM jenkins/inbound-agent:latest
 
