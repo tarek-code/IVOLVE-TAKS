@@ -6,11 +6,13 @@ This guide shows how to set up Lab 24 using the **IVOLVE-TAKS repository** with 
 
 ## 🎯 Overview
 
-**Goal:** Add Jenkins_App content to prod/stag/dev branches in IVOLVE-TAKS repository, then configure Jenkins to use it.
+**Goal:** Create branches (prod/stag/dev) from main, where each branch contains the **entire IVOLVE-TAKS repository** (same as main).
 
 **Repository:** `https://github.com/tarek-code/IVOLVE-TAKS.git`
 
 **Jenkinsfile Path:** `03-Continues-Integration/task-24/Jenkinsfile`
+
+**Important:** All branches (prod/stag/dev/main) will have the **same content** - the entire IVOLVE-TAKS repository structure.
 
 ---
 
@@ -24,53 +26,37 @@ git clone https://github.com/tarek-code/IVOLVE-TAKS.git
 cd IVOLVE-TAKS
 ```
 
-### Step 2: Copy Jenkins_App Content to Repository
+### Step 2: Verify Content Exists
 
 ```bash
 # Ensure you're on main branch
 git checkout main
 
-# Copy Jenkins_App files to a location in the repo
-# Option A: Copy to root (if you want it at root level)
-cp -r 03-Continues-Integration/task-24/Jenkins_App/* .
-
-# Option B: Keep it in task-24 folder (recommended - keeps structure)
-# Files are already in: 03-Continues-Integration/task-24/Jenkins_App/
-# Just need to copy Jenkinsfile to the right location
-cp 03-Continues-Integration/task-24/Jenkinsfile 03-Continues-Integration/task-24/Jenkins_App/
-
-# Verify files exist
+# Verify Jenkins_App exists (should already be there)
 ls -la 03-Continues-Integration/task-24/Jenkins_App/
-# Should see: Dockerfile, pom.xml, src/, Jenkinsfile
+# Should see: Dockerfile, pom.xml, src/
+
+# Verify Jenkinsfile exists
+ls -la 03-Continues-Integration/task-24/Jenkinsfile
 ```
 
-### Step 3: Commit Jenkins_App Content to Main Branch
+**Note:** If Jenkins_App doesn't exist, you may need to copy it from the cloned source, but it should already be in your repository.
+
+### Step 3: Create Branches from Main
+
+Since you want all branches to have the same content as main (entire IVOLVE-TAKS), just create branches from main:
 
 ```bash
-# Add all Jenkins_App files
-git add 03-Continues-Integration/task-24/Jenkins_App/
-git add 03-Continues-Integration/task-24/Jenkinsfile
-
-# Commit
-git commit -m "Add Jenkins_App content and Jenkinsfile for Lab 24"
-
-# Push to main
-git push origin main
-```
-
-### Step 4: Create and Push Branches (prod/stag/dev)
-
-```bash
-# Create dev branch from main
+# Create dev branch (copies everything from main)
 git checkout -b dev
 git push -u origin dev
 
-# Create stag branch from main
+# Create stag branch (copies everything from main)
 git checkout main
 git checkout -b stag
 git push -u origin stag
 
-# Create prod branch from main
+# Create prod branch (copies everything from main)
 git checkout main
 git checkout -b prod
 git push -u origin prod
@@ -79,7 +65,9 @@ git push -u origin prod
 git branch -a
 ```
 
-### Step 5: Verify Branches on GitHub
+**Result:** All branches (prod/stag/dev/main) now have the **same content** - the entire IVOLVE-TAKS repository!
+
+### Step 4: Verify Branches on GitHub
 
 1. Go to: `https://github.com/tarek-code/IVOLVE-TAKS`
 2. Click branch dropdown
@@ -90,7 +78,7 @@ git branch -a
 
 ## 🔧 Jenkins Configuration
 
-### Step 6: Configure Multi Branch Pipeline in Jenkins
+### Step 5: Configure Multi Branch Pipeline in Jenkins
 
 1. **Go to Jenkins Dashboard** → **New Item**
 
@@ -152,7 +140,7 @@ IVOLVE-TAKS/
 └── ... (other folders)
 ```
 
-**Each branch (prod/stag/dev/main) should have this structure.**
+**Each branch (prod/stag/dev/main) has this structure - they're all identical to main!**
 
 ---
 
@@ -174,11 +162,11 @@ The current Jenkinsfile assumes files are in root. We need to update it to work 
 ## ✅ Verification Checklist
 
 - [ ] IVOLVE-TAKS repository cloned
-- [ ] Jenkins_App content copied to `03-Continues-Integration/task-24/Jenkins_App/`
-- [ ] Jenkinsfile copied to `03-Continues-Integration/task-24/Jenkinsfile`
-- [ ] All files committed to main branch
-- [ ] Branches created: prod, stag, dev
-- [ ] Branches pushed to GitHub
+- [ ] Verified Jenkins_App exists in `03-Continues-Integration/task-24/Jenkins_App/`
+- [ ] Verified Jenkinsfile exists at `03-Continues-Integration/task-24/Jenkinsfile`
+- [ ] Branches created from main: prod, stag, dev
+- [ ] All branches pushed to GitHub
+- [ ] Verified all branches have same content as main
 - [ ] Jenkins Multi Branch Pipeline configured
 - [ ] Repository URL: `https://github.com/tarek-code/IVOLVE-TAKS.git`
 - [ ] Script Path: `03-Continues-Integration/task-24/Jenkinsfile`
