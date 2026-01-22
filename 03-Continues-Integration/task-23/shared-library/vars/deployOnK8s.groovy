@@ -112,14 +112,12 @@ spec:
                         echo "=== Pod Events ==="
                         kubectl get events -n ${namespace} --sort-by='.lastTimestamp' | grep jenkins-app | tail -5 || true
                         echo "=== Checking Pod Logs (if pods exist) ==="
-                        sh '''
-                            for pod in $(kubectl get pods -n ''' + namespace + ''' -l app=jenkins-app -o jsonpath='{.items[*].metadata.name}'); do
-                                if [ ! -z "$pod" ]; then
-                                    echo "--- Logs for pod: $pod ---"
-                                    kubectl logs -n ''' + namespace + ''' $pod --tail=20 || echo "Could not get logs for $pod"
-                                fi
-                            done
-                        '''
+                        for pod in \$(kubectl get pods -n ${namespace} -l app=jenkins-app -o jsonpath='{.items[*].metadata.name}'); do
+                            if [ ! -z "\$pod" ]; then
+                                echo "--- Logs for pod: \$pod ---"
+                                kubectl logs -n ${namespace} \$pod --tail=20 || echo "Could not get logs for \$pod"
+                            fi
+                        done
                     """
                 }
             } catch (Exception e) {
@@ -138,14 +136,12 @@ spec:
                     echo "=== Pod Events ==="
                     kubectl get events -n ${namespace} --sort-by='.lastTimestamp' | grep jenkins-app | tail -5 || true
                     echo "=== Checking Pod Logs (if pods exist) ==="
-                    sh '''
-                        for pod in $(kubectl get pods -n ''' + namespace + ''' -l app=jenkins-app -o jsonpath='{.items[*].metadata.name}'); do
-                            if [ ! -z "$pod" ]; then
-                                echo "--- Logs for pod: $pod ---"
-                                kubectl logs -n ''' + namespace + ''' $pod --tail=20 || echo "Could not get logs for $pod"
-                            fi
-                        done
-                    '''
+                    for pod in \$(kubectl get pods -n ${namespace} -l app=jenkins-app -o jsonpath='{.items[*].metadata.name}'); do
+                        if [ ! -z "\$pod" ]; then
+                            echo "--- Logs for pod: \$pod ---"
+                            kubectl logs -n ${namespace} \$pod --tail=20 || echo "Could not get logs for \$pod"
+                        fi
+                    done
                 """
             }
         }
