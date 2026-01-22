@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    environment: production
+    purpose: production-deployments
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stag
+  labels:
+    environment: staging
+    purpose: staging-deployments
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    environment: development
+    purpose: development-deployments

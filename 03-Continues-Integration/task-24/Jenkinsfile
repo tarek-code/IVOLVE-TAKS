@@ -1,0 +1,113 @@
+@Library('ivolve-shared-library@main') _
+
+pipeline {
+    agent {
+        label 'jenkins-agent'  // Use Jenkins agent/slave
+    }
+    
+    environment {
+        DOCKERHUB_USER = "${env.DOCKERHUB_USERNAME ?: 'your-username'}"
+        DOCKERHUB_REPO = "${DOCKERHUB_USER}/jenkins-app"
+        // Determine namespace and image tag based on branch
+        BRANCH_NAME = "${env.BRANCH_NAME ?: 'main'}"
+        // Map branch to namespace
+        K8S_NAMESPACE = "${env.BRANCH_NAME == 'prod' ? 'prod' : (env.BRANCH_NAME == 'stag' ? 'stag' : (env.BRANCH_NAME == 'dev' ? 'dev' : 'default'))}"
+        // Use branch name in image tag for better traceability
+        IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "============================================"
+                echo "Branch: ${BRANCH_NAME}"
+                echo "Target Namespace: ${K8S_NAMESPACE}"
+                echo "Image Tag: ${IMAGE_TAG}"
+                echo "============================================"
+                checkout scm
+            }
+        }
+        
+        stage('RunUnitTest') {
+            steps {
+                runUnitTest('.')
+            }
+        }
+        
+        stage('BuildApp') {
+            steps {
+                buildApp('.')
+            }
+        }
+        
+        stage('BuildImage') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    buildImage(imageName, '.')
+                }
+            }
+        }
+        
+        stage('ScanImage') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    scanImage(imageName)
+                }
+            }
+        }
+        
+        stage('PushImage') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    pushImage(imageName)
+                }
+            }
+        }
+        
+        stage('RemoveImageLocally') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    removeImageLocally(imageName)
+                }
+            }
+        }
+        
+        stage('DeployOnK8s') {
+            steps {
+                script {
+                    def imageName = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                    echo "Deploying to namespace: ${K8S_NAMESPACE}"
+                    deployOnK8s(imageName, K8S_NAMESPACE, 'deployment.yaml', '.')
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "============================================"
+            echo "POST ACTION: ALWAYS"
+            echo "Branch: ${BRANCH_NAME}"
+            echo "Namespace: ${K8S_NAMESPACE}"
+            echo "Pipeline execution completed"
+            echo "============================================"
+            deleteDir()
+        }
+        success {
+            echo "============================================"
+            echo "POST ACTION: SUCCESS"
+            echo "Pipeline succeeded! Application deployed to ${K8S_NAMESPACE} namespace."
+            echo "============================================"
+        }
+        failure {
+            echo "============================================"
+            echo "POST ACTION: FAILURE"
+            echo "Pipeline failed! Check logs for details."
+            echo "============================================"
+        }
+    }
+}
