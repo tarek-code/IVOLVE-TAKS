@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: jenkins-app
-        image: tarekadel/jenkins-app:latest # This will be updated by Jenkins pipeline
+        image: tarekadel/jenkins-app:3
         ports:
         - containerPort: 9090
           name: http-port
