@@ -138,6 +138,15 @@ pipeline {
                                     git config user.name "Jenkins"
                                     git config user.email "jenkins@example.com"
                                     
+                                    # Set remote URL with credentials
+                                    git remote set-url origin https://\${GIT_USER}:\${GIT_PASSWORD}@${repoUrl}
+                                    
+                                    # Fetch to get remote branches
+                                    git fetch origin
+                                    
+                                    # Checkout the target branch (create if it doesn't exist locally)
+                                    git checkout -B ${GIT_BRANCH} origin/${GIT_BRANCH} 2>/dev/null || git checkout -b ${GIT_BRANCH}
+                                    
                                     # Add the updated deployment.yaml
                                     git add ${DEPLOYMENT_FILE}
                                     
@@ -145,7 +154,6 @@ pipeline {
                                     git commit -m "Update deployment image to ${DOCKERHUB_REPO}:${IMAGE_TAG} (Build #${BUILD_NUMBER})" || exit 0
                                     
                                     # Push to GitHub
-                                    git remote set-url origin https://\${GIT_USER}:\${GIT_PASSWORD}@${repoUrl}
                                     git push origin ${GIT_BRANCH}
                                     
                                     echo "Successfully pushed updated deployment.yaml to ${GIT_BRANCH} branch"
