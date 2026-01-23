@@ -129,23 +129,28 @@ pipeline {
                         withCredentials([usernamePassword(credentialsId: 'github-credentials', 
                                                          usernameVariable: 'GIT_USER', 
                                                          passwordVariable: 'GIT_PASSWORD')]) {
-                            sh """
-                                # Configure git
-                                git config user.name "Jenkins"
-                                git config user.email "jenkins@example.com"
+                            script {
+                                // Remove https:// prefix from URL if present
+                                def repoUrl = GIT_REPO_URL.replace('https://', '').replace('http://', '')
                                 
-                                # Add the updated deployment.yaml
-                                git add ${DEPLOYMENT_FILE}
-                                
-                                # Commit the changes
-                                git commit -m "Update deployment image to ${DOCKERHUB_REPO}:${IMAGE_TAG} (Build #${BUILD_NUMBER})" || exit 0
-                                
-                                # Push to GitHub
-                                git remote set-url origin https://\${GIT_USER}:\${GIT_PASSWORD}@${GIT_REPO_URL#https://}
-                                git push origin ${GIT_BRANCH}
-                                
-                                echo "Successfully pushed updated deployment.yaml to ${GIT_BRANCH} branch"
-                            """
+                                sh """
+                                    # Configure git
+                                    git config user.name "Jenkins"
+                                    git config user.email "jenkins@example.com"
+                                    
+                                    # Add the updated deployment.yaml
+                                    git add ${DEPLOYMENT_FILE}
+                                    
+                                    # Commit the changes
+                                    git commit -m "Update deployment image to ${DOCKERHUB_REPO}:${IMAGE_TAG} (Build #${BUILD_NUMBER})" || exit 0
+                                    
+                                    # Push to GitHub
+                                    git remote set-url origin https://\${GIT_USER}:\${GIT_PASSWORD}@${repoUrl}
+                                    git push origin ${GIT_BRANCH}
+                                    
+                                    echo "Successfully pushed updated deployment.yaml to ${GIT_BRANCH} branch"
+                                """
+                            }
                         }
                     }
                 }
