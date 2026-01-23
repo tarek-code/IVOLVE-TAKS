@@ -1,0 +1,47 @@
+- name: Securing Sensitive Data with Ansible Vault
+  hosts: task29
+  become: yes
+  gather_facts: yes
+  vars_files: vault.yaml
+  tasks:
+    - name: Install MySQL
+      yum:
+        name: mysql-server
+        state: present
+    - name: start and enable mysql
+      service:
+        name: mysqld
+        state: started
+        enabled: yes
+    - name: Install pip3 (if not already installed)
+      yum:
+        name: python3-pip
+        state: present
+
+    - name: Install Python MySQL module (PyMySQL)
+      pip:
+        name: PyMySQL
+        executable: pip3
+        state: present
+    - name: set mysql root password
+      mysql_user:
+        name: root
+        host: localhost
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+        check_implicit_admin: yes
+    - name: create ivolve DB
+      mysql_db:
+        name: ivolve
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+    - name: create db user with privileges
+      mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "ivolve.*:ALL"
+        host: "%"
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
