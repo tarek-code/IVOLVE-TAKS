@@ -31,6 +31,7 @@ By the end of this lab, you will:
 ## 🔍 What is GitOps?
 
 **GitOps** is a methodology where:
+
 - **Git is the single source of truth** for infrastructure and application configurations
 - **Automated tools** (like ArgoCD) watch Git repositories
 - **Changes in Git trigger automatic deployments** to Kubernetes
@@ -63,6 +64,7 @@ By the end of this lab, you will:
 **For detailed step-by-step instructions, see [SETUP-GUIDE.md](SETUP-GUIDE.md)**
 
 The setup guide includes:
+
 - ✅ **Part 1**: Configure Jenkins GitHub Access (Personal Access Token)
 - ✅ **Part 2**: Install ArgoCD Manually (with commands)
 - ✅ **Part 3**: Configure ArgoCD via GUI (screenshots and steps)
@@ -80,6 +82,7 @@ The setup guide includes:
 **What:** Install ArgoCD using the installation script
 
 1. **Run the installation script:**
+
    ```bash
    cd 03-Continues-Integration/task-25
    chmod +x argocd-install.sh
@@ -87,23 +90,25 @@ The setup guide includes:
    ```
 
    Or manually:
+
    ```bash
    # Create argocd namespace
    kubectl create namespace argocd
-   
+
    # Install ArgoCD
    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-   
+
    # Wait for pods to be ready
    kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
    ```
-
 2. **Verify ArgoCD installation:**
+
    ```bash
    kubectl get pods -n argocd
    ```
 
    You should see:
+
    ```
    NAME                                  READY   STATUS    RESTARTS   AGE
    argocd-application-controller-xxx    1/1     Running   0          2m
@@ -112,13 +117,14 @@ The setup guide includes:
    argocd-repo-server-xxx               1/1     Running   0          2m
    argocd-server-xxx                     1/1     Running   0          2m
    ```
-
 3. **Access ArgoCD UI:**
 
    **Option A: Port Forward (Recommended for testing)**
+
    ```bash
    kubectl port-forward svc/argocd-server -n argocd 8080:443
    ```
+
    - Access: `https://localhost:8080`
    - Username: `admin`
    - Password: Get with:
@@ -128,6 +134,7 @@ The setup guide includes:
      ```
 
    **Option B: Expose via NodePort**
+
    ```bash
    kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort"}}'
    kubectl get svc argocd-server -n argocd
@@ -149,6 +156,7 @@ chmod +x create-gitops-namespace.sh
 ```
 
 Or manually:
+
 ```bash
 kubectl create namespace gitops
 kubectl get namespace gitops
@@ -163,16 +171,17 @@ kubectl get namespace gitops
 **What:** Ensure your repository has the deployment.yaml file
 
 1. **Clone your repository** (or use existing IVOLVE-TAKS):
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
    cd YOUR_REPO
    ```
-
 2. **Ensure deployment.yaml exists:**
+
    - Copy `03-Continues-Integration/task-25/deployment.yaml` to your repository
    - Or ensure it's already in the repository at: `03-Continues-Integration/task-25/deployment.yaml`
-
 3. **Commit and push:**
+
    ```bash
    git add 03-Continues-Integration/task-25/deployment.yaml
    git commit -m "Add deployment.yaml for GitOps"
@@ -190,9 +199,10 @@ kubectl get namespace gitops
 #### 4.1 Create Pipeline Job
 
 1. **Go to Jenkins Dashboard:**
-   - Click **New Item**
 
+   - Click **New Item**
 2. **Create Pipeline:**
+
    - **Name**: `gitops-pipeline`
    - **Type**: Select **Pipeline**
    - Click **OK**
@@ -200,23 +210,24 @@ kubectl get namespace gitops
 #### 4.2 Configure Pipeline
 
 1. **Pipeline Definition:**
+
    - **Definition**: **Pipeline script from SCM**
    - **SCM**: **Git**
    - **Repository URL**: Your GitOps repository URL (e.g., `https://github.com/YOUR_USERNAME/YOUR_REPO.git`)
    - **Credentials**: Add GitHub credentials if repository is private
    - **Branch**: `*/main` (or your branch name)
    - **Script Path**: `03-Continues-Integration/task-25/Jenkinsfile`
-
 2. **Environment Variables (Optional):**
+
    - Go to **Pipeline** → **Environment Variables**
    - Add if needed:
      - `GIT_REPO_URL`: Your GitOps repository URL
      - `GIT_BRANCH`: Branch name (default: `main`)
      - `APP_REPO_URL`: Application repository URL (if different from GitOps repo)
-
 3. **Configure Credentials:**
 
    **Docker Hub Credentials:**
+
    - Go to **Manage Jenkins** → **Credentials** → **System** → **Global credentials**
    - Add **Username with password**
    - **ID**: `dockerhub-credentials`
@@ -224,11 +235,11 @@ kubectl get namespace gitops
    - **Password**: Your Docker Hub password
 
    **GitHub Credentials:**
+
    - Add **Username with password**
    - **ID**: `github-credentials`
    - **Username**: Your GitHub username
    - **Password**: Your GitHub personal access token (not password!)
-
 4. **Click Save**
 
 #### 4.3 Update Jenkinsfile (if needed)
@@ -257,6 +268,7 @@ environment {
 #### Option A: Using kubectl (Recommended)
 
 1. **Update argocd-application.yaml:**
+
    ```bash
    cd 03-Continues-Integration/task-25
    # Edit argocd-application.yaml and update:
@@ -264,13 +276,13 @@ environment {
    # - targetRevision: Your branch name (e.g., main)
    # - path: Path to deployment.yaml in repository
    ```
-
 2. **Apply ArgoCD Application:**
+
    ```bash
    kubectl apply -f argocd-application.yaml
    ```
-
 3. **Verify application created:**
+
    ```bash
    kubectl get application -n argocd
    ```
@@ -278,22 +290,21 @@ environment {
 #### Option B: Using ArgoCD UI
 
 1. **Access ArgoCD UI** (from Step 1)
-
 2. **Create New Application:**
+
    - Click **+ New App**
    - **Application Name**: `jenkins-app-gitops`
    - **Project Name**: `default`
    - **Sync Policy**: **Automatic** (check boxes for auto-sync and self-heal)
-
 3. **Source Configuration:**
+
    - **Repository URL**: Your GitOps repository URL
    - **Revision**: `main` (or your branch)
-   - **Path**: `03-Continues-Integration/task-25`
-
+   - **Path**: `04-GitOps/task-25`
 4. **Destination Configuration:**
+
    - **Cluster URL**: `https://kubernetes.default.svc`
    - **Namespace**: `gitops`
-
 5. **Click Create**
 
 ---
@@ -305,10 +316,11 @@ environment {
 **What:** Trigger the pipeline and observe GitOps workflow
 
 1. **Run the pipeline:**
+
    - Go to `gitops-pipeline` job
    - Click **Build Now**
-
 2. **Monitor pipeline execution:**
+
    - Watch console output
    - Verify each stage completes:
      - ✅ BuildApp
@@ -318,7 +330,9 @@ environment {
      - ✅ UpdateDeploymentYaml
      - ✅ PushToGitHub
 
+   ![Jenkins Pipeline Complete](screenshots/kenkins-is-done.png)
 3. **Verify Git update:**
+
    ```bash
    # Check your repository on GitHub
    # deployment.yaml should have new image tag
@@ -337,15 +351,17 @@ environment {
 #### 7.1 Check ArgoCD UI
 
 1. **Access ArgoCD UI** (from Step 1)
-
 2. **View Application:**
+
    - Click on `jenkins-app-gitops` application
    - You should see:
      - **Sync Status**: `Synced` (green)
      - **Health Status**: `Healthy` (green)
      - **Last Sync**: Recent timestamp
 
+   ![ArgoCD Application Synced](screenshots/argocd-is-synced.png)
 3. **View Application Details:**
+
    - Click on the application
    - See the deployment tree
    - Verify `jenkins-app` deployment is present
@@ -367,6 +383,7 @@ kubectl describe deployment jenkins-app -n gitops | grep Image
 ```
 
 **Expected output:**
+
 ```
 NAME          READY   UP-TO-DATE   AVAILABLE   AGE
 jenkins-app   2/2     2            2           5m
@@ -375,6 +392,8 @@ NAME                           READY   STATUS    RESTARTS   AGE
 jenkins-app-xxx-xxx            1/1     Running   0          5m
 jenkins-app-xxx-xxx            1/1     Running   0          5m
 ```
+
+![Deployment in GitOps Namespace](screenshots/deployment-is-in-gitops-namespace.png)
 
 #### 7.3 Verify Image Tag
 
@@ -422,15 +441,16 @@ kubectl get deployment jenkins-app -n gitops -o jsonpath='{.spec.template.spec.c
 ### Key Components
 
 1. **Jenkins Pipeline:**
+
    - Builds and pushes Docker images
    - Updates Git repository (deployment.yaml)
    - **Does NOT deploy directly to Kubernetes**
-
 2. **Git Repository:**
+
    - Contains deployment.yaml with image tags
    - **Single source of truth** for desired state
-
 3. **ArgoCD:**
+
    - Watches Git repository
    - Compares Git state with cluster state
    - Automatically syncs when changes detected
@@ -455,22 +475,23 @@ The Jenkinsfile implements these stages:
 ## 🎯 Key Features
 
 1. **Git as Source of Truth:**
+
    - All deployment configurations in Git
    - Version controlled and auditable
-
 2. **Automatic Deployment:**
+
    - ArgoCD automatically deploys when Git changes
    - No manual kubectl commands needed
-
 3. **Separation of Concerns:**
+
    - Jenkins: Build and push images, update Git
    - ArgoCD: Deploy to Kubernetes
-
 4. **Self-Healing:**
+
    - ArgoCD can detect drift and auto-sync
    - Ensures cluster matches Git state
-
 5. **Rollback Capability:**
+
    - Revert Git commit to rollback deployment
    - ArgoCD will sync to previous state
 
@@ -499,6 +520,7 @@ Before running the pipeline, verify:
 **Problem:** ArgoCD pods not starting
 
 **Solution:**
+
 1. Check cluster resources: `kubectl top nodes`
 2. Check pod events: `kubectl describe pod <pod-name> -n argocd`
 3. Check logs: `kubectl logs <pod-name> -n argocd`
@@ -509,6 +531,7 @@ Before running the pipeline, verify:
 **Problem:** Application shows "OutOfSync" or "Unknown"
 
 **Solution:**
+
 1. Check repository URL is correct
 2. Verify path to deployment.yaml is correct
 3. Check ArgoCD can access repository (no authentication issues)
@@ -520,6 +543,7 @@ Before running the pipeline, verify:
 **Problem:** "PushToGitHub" stage fails
 
 **Solution:**
+
 1. Verify GitHub credentials are correct
 2. Use Personal Access Token (not password) for GitHub
 3. Check repository permissions
@@ -531,6 +555,7 @@ Before running the pipeline, verify:
 **Problem:** ArgoCD synced but pods still using old image
 
 **Solution:**
+
 1. Check deployment.yaml was actually updated in Git
 2. Verify ArgoCD detected the change (check sync status)
 3. Check pod image: `kubectl describe pod <pod-name> -n gitops | grep Image`
@@ -542,6 +567,7 @@ Before running the pipeline, verify:
 **Problem:** Pods fail with "ImagePullBackOff"
 
 **Solution:**
+
 1. Verify image exists in Docker Hub
 2. Check image name and tag are correct
 3. Verify Docker Hub credentials if using private repo
@@ -560,6 +586,9 @@ task-25/
 ├── create-gitops-namespace.sh     # Namespace creation script
 ├── README.md                      # This file
 └── screenshots/                   # Screenshots directory
+    ├── argocd-is-synced.png      # ArgoCD application synced status
+    ├── deployment-is-in-gitops-namespace.png  # Deployment in gitops namespace
+    └── kenkins-is-done.png        # Jenkins pipeline completed successfully
 ```
 
 ---
