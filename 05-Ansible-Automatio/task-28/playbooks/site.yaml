@@ -1,0 +1,9 @@
+---
+- name: task_28 to configure devops tools
+  hosts: task28
+  become: yes
+  gather_facts: yes
+  roles:
+    - docker
+    - k8s
+    - jenkis

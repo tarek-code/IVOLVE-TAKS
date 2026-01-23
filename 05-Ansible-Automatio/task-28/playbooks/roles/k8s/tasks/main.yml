@@ -1,0 +1,27 @@
+---
+- name: Get latest kubectl version
+  uri:
+    url: https://dl.k8s.io/release/stable.txt
+    return_content: yes
+  register: kubectl_version
+
+- name: Download kubectl
+  get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version.content | trim }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+
+- name: Verify kubectl file exists
+  stat:
+    path: /usr/local/bin/kubectl
+  register: kubectl_file
+
+- name: Verify kubectl
+  command: /usr/local/bin/kubectl version --client
+  register: kubectl_verify
+  changed_when: false
+  when: kubectl_file.stat.exists
+
+- debug:
+    msg: "{{ kubectl_verify.stdout }}"
+  when: kubectl_verify is defined

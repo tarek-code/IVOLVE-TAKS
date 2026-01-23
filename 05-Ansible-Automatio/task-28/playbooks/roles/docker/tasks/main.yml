@@ -1,0 +1,27 @@
+---
+- name: install required packages
+  yum:
+    name:
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
+      - dnf-plugins-core
+    state: present
+- name: Set up the repository
+  get_url:
+    url: https://download.docker.com/linux/centos/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+- name: Install the Docker packages
+  yum:
+    name:
+      - docker-ce 
+      - docker-ce-cli 
+      - containerd.io 
+      - docker-buildx-plugin 
+      - docker-compose-plugin
+    state: present
+- name: docker service up
+  service:
+    name: docker
+    state: started
+    enabled: yes

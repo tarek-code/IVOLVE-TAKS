@@ -1,0 +1,70 @@
+---
+- name: Add Jenkins repo
+  yum_repository:
+    name: jenkins
+    description: Jenkins Repo
+    baseurl: http://pkg.jenkins.io/redhat-stable/
+    gpgcheck: yes
+    gpgkey: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+
+- name: Download Jenkins GPG key
+  get_url:
+    url: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+    dest: /tmp/jenkins.io.key
+    mode: "0644"
+
+- name: Import Jenkins GPG key
+  command: rpm --import /tmp/jenkins.io.key
+
+- name: Refresh yum cache
+  command: yum makecache
+
+- name: Install Java 17 (required for Jenkins)
+  yum:
+    name: java-17-openjdk
+    state: present
+
+- name: Set Java 17 as default using alternatives
+  shell: |
+    JAVA17_PATH=$(find /usr/lib/jvm -name "java-17*" -type d | head -1)
+    if [ -n "$JAVA17_PATH" ] && [ -f "$JAVA17_PATH/bin/java" ]; then
+      alternatives --set java "$JAVA17_PATH/bin/java"
+    fi
+  args:
+    executable: /bin/bash
+  ignore_errors: yes
+
+- name: Verify Java version
+  command: java -version
+  register: java_version
+  changed_when: false
+  failed_when: false
+
+- debug:
+    msg: "{{ java_version.stderr_lines[0] }}"
+
+- name: Install Jenkins
+  yum:
+    name: jenkins
+    state: present
+    disable_gpg_check: yes
+
+- name: Enable Jenkins service
+  service:
+    name: jenkins
+    enabled: yes
+
+- name: Start Jenkins service
+  service:
+    name: jenkins
+    state: started
+  register: jenkins_start_result
+
+- name: Check Jenkins service status
+  command: systemctl status jenkins
+  register: jenkins_status
+  changed_when: false
+  failed_when: false
+
+- debug:
+    msg: "Jenkins installation completed. Service start status: {{ jenkins_start_result.failed | default('success') }}"
