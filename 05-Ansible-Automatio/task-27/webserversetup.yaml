@@ -1,0 +1,33 @@
+---
+- name: Automated webserver
+  hosts: task27
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: install nginx
+      yum:
+        name: nginx
+        state: present
+    - name: enable nginx
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+    - name: copy custom html
+      copy:
+        src: index.html
+        dest: /usr/share/nginx/html/index.html
+        owner: nginx
+        group: nginx
+        mode: "0644"
+    - name: Open HTTP port in firewall
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Reload firewalld
+      command: firewall-cmd --reload
+      when: ansible_facts['os_family'] == "RedHat"
