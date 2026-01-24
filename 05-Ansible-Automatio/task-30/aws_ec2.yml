@@ -1,0 +1,21 @@
+---
+plugin: aws_ec2
+regions:
+  - us-east-1 # Change to your AWS region
+filters:
+  instance-state-name: running
+  #tag:service: db                # i have comment it to make ansible apply for all instances
+  #tag:task30: ivolve              # i have comment it to make ansible apply for all instances
+hostnames:
+  - ip-address
+  - private-ip-address
+keyed_groups:
+  - key: tags.service
+    prefix: service
+  - key: tags.Environment
+    prefix: env
+  - key: tags.task30
+    prefix: task30
+compose:
+  ansible_host: public_ip_address
+  ansible_user: ec2-user # For Amazon Linux, use 'ubuntu' for Ubuntu, 'ec2-user' for RHEL/CentOS

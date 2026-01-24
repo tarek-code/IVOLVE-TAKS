@@ -1,0 +1,144 @@
+---
+- name: Check available database packages
+  command: dnf list available | grep -i mariadb
+  register: available_packages
+  changed_when: false
+  failed_when: false
+
+- name: Display available packages
+  debug:
+    msg: "{{ available_packages.stdout_lines }}"
+
+- name: Install MySQL from MySQL repository
+  block:
+    - name: Download MySQL repository
+      get_url:
+        url: https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
+        dest: /tmp/mysql-release.rpm
+
+    - name: Install MySQL repository
+      command: dnf localinstall -y /tmp/mysql-release.rpm
+      args:
+        creates: /etc/yum.repos.d/mysql-community.repo
+
+    - name: Install MySQL server
+      dnf:
+        name: mysql-server
+        state: present
+  
+  rescue:
+    - name: Try installing mariadb105-server (Amazon Linux 2023)
+      dnf:
+        name: mariadb105-server
+        state: present
+      ignore_errors: yes
+
+- name: Check if mysqld service exists
+  command: systemctl list-unit-files | grep mysqld
+  register: mysqld_check
+  changed_when: false
+  failed_when: false
+
+- name: Check if MySQL data directory exists
+  stat:
+    path: /var/lib/mysql
+  register: mysql_data_dir
+
+- name: Initialize MySQL/MariaDB if needed
+  command: mysql_install_db --datadir=/var/lib/mysql --user=mysql
+  when: 
+    - not mysql_data_dir.stat.exists
+    - mysqld_check.rc != 0
+  ignore_errors: yes
+
+- name: Initialize MariaDB if needed
+  command: mariadb-install-db --datadir=/var/lib/mysql --user=mysql
+  when: 
+    - not mysql_data_dir.stat.exists
+    - mysqld_check.rc != 0
+  ignore_errors: yes
+
+- name: Start and enable MySQL service
+  service:
+    name: mysqld
+    state: started
+    enabled: yes
+  when: mysqld_check.rc == 0
+
+- name: Start and enable MariaDB service
+  service:
+    name: mariadb
+    state: started
+    enabled: yes
+  when: mysqld_check.rc != 0
+
+- name: Wait for MySQL/MariaDB to be ready
+  wait_for:
+    port: 3306
+    delay: 5
+    timeout: 30
+  ignore_errors: yes
+
+- name: Install pip3 (if not already installed)
+  dnf:
+    name: python3-pip
+    state: present
+
+- name: Install Python MySQL module (PyMySQL)
+  pip:
+    name: PyMySQL
+    executable: pip3
+    state: present
+
+- name: Determine MySQL client command
+  set_fact:
+    mysql_cmd: "{{ 'mariadb' if mysqld_check.rc != 0 else 'mysql' }}"
+
+- name: Try to set MySQL root password using mysql_user module (if password already set)
+  mysql_user:
+    name: root
+    host: localhost
+    password: "{{ mysql_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    login_password: "{{ mysql_root_password }}"
+  ignore_errors: yes
+  register: set_password_with_pass
+
+- name: Set MySQL root password using mysql command (for fresh install - no password yet)
+  shell: |
+    {{ mysql_cmd }} -u root <<EOF
+    ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_root_password }}';
+    FLUSH PRIVILEGES;
+    EOF
+  args:
+    executable: /bin/bash
+  when: set_password_with_pass.failed | default(false)
+  ignore_errors: yes
+  register: set_password_cmd
+  changed_when: "'ERROR' not in (set_password_cmd.stderr | default(''))"
+
+- name: Verify root password is set correctly
+  mysql_user:
+    name: root
+    host: localhost
+    password: "{{ mysql_root_password }}"
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    login_password: "{{ mysql_root_password }}"
+  when: (not (set_password_with_pass.failed | default(false))) or (set_password_cmd is defined and not (set_password_cmd.skipped | default(false)) and (set_password_cmd.rc | default(1)) == 0)
+
+- name: Create ivolve DB
+  mysql_db:
+    name: ivolve
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+
+- name: Create DB user with privileges
+  mysql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    priv: "ivolve.*:ALL"
+    host: "%"
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"

@@ -1,0 +1,9 @@
+---
+- name: Install and Configure MySQL on AWS EC2
+  hosts: service_db,task30_ivolve
+  become: yes
+  gather_facts: yes
+  vars_files:
+    - ../task-29/vault.yaml
+  roles:
+    - mysql
